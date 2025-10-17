@@ -3,6 +3,7 @@ use gpui_component::{Icon, IconName};
 
 use crate::entities::global_state::DragInfo;
 
+#[derive(Clone, PartialEq)]
 enum MovingElement {
     Top,
     Bottom,
@@ -12,6 +13,7 @@ pub struct Document {
     elements: Vec<Entity<DragInfo>>,
     dragging_index: Option<usize>,
     is_dragging: bool,
+    hovered_drop_zone: Option<(usize, MovingElement)>,
 }
 
 impl Document {
@@ -30,6 +32,7 @@ impl Document {
             elements,
             dragging_index: None,
             is_dragging: false,
+            hovered_drop_zone: None,
         }
     }
 
@@ -62,13 +65,20 @@ impl Document {
 
             self.dragging_index = None;
             self.is_dragging = false;
+            self.hovered_drop_zone = None;
         }
     }
 }
 
 impl Render for Document {
     fn render(&mut self, _window: &mut Window, ctx: &mut Context<Self>) -> impl IntoElement {
+        let a = self
+            .hovered_drop_zone
+            .as_ref()
+            .unwrap_or(&(50, MovingElement::Top));
+
         div()
+            .child(a.0.to_string())
             .flex_1()
             .bg(rgb(0xded3d3))
             .on_drag_move(
@@ -79,19 +89,15 @@ impl Render for Document {
                         || mouse_position.y < bounds.origin.y
                         || mouse_position.x > bounds.origin.x + bounds.size.width
                         || mouse_position.y > bounds.origin.y + bounds.size.height;
+
                     if is_outside {
                         this.dragging_index = None;
                         this.is_dragging = false;
+                        this.hovered_drop_zone = None;
                         ctx.notify();
                     }
                 }),
             )
-            .on_drop(ctx.listener(|this, _: &DragInfo, _, ctx| {
-                println!("Drop");
-                this.dragging_index = None;
-                this.is_dragging = false;
-                ctx.notify();
-            }))
             .children(
                 self.elements
                     .clone()
@@ -106,10 +112,39 @@ impl Render for Document {
                             .items_center()
                             .hover(|this| this.bg(blue().opacity(0.5)))
                             .drag_over(|style, _: &DragInfo, _, _| style.cursor_not_allowed())
+                            .on_drag_move(ctx.listener(
+                                move |this, event: &DragMoveEvent<Entity<DragInfo>>, _, ctx| {
+                                    let bounds = event.bounds;
+                                    let middle_y = bounds.origin.y + bounds.size.height / 2.0;
+                                    let mouse_y = event.event.position.y;
+
+                                    let is_in_bounds = mouse_y >= bounds.origin.y
+                                        && mouse_y <= bounds.origin.y + bounds.size.height;
+
+                                    if is_in_bounds {
+                                        let zone = if mouse_y < middle_y {
+                                            MovingElement::Top
+                                        } else {
+                                            MovingElement::Bottom
+                                        };
+
+                                        if this.hovered_drop_zone != Some((index, zone.clone())) {
+                                            this.hovered_drop_zone = Some((index, zone.clone()));
+                                            ctx.notify();
+                                        }
+                                    } else {
+                                        if let Some((i, _)) = this.hovered_drop_zone {
+                                            if i == index {
+                                                this.hovered_drop_zone = None;
+                                                ctx.notify();
+                                            }
+                                        }
+                                    }
+                                },
+                            ))
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
                                 ctx.listener(move |this, _, _, ctx| {
-                                    println!("Mouse down {}", index);
                                     this.dragging_index = Some(index);
                                     this.is_dragging = true;
 
@@ -173,16 +208,31 @@ impl Render for Document {
 
                                 this.child(top_dropable_zone_element)
                                     .child(bottom_dropable_zone_element)
-                                    .child(
+                            })
+                            .when_some(
+                                match self.hovered_drop_zone.clone() {
+                                    Some((i, MovingElement::Top)) if i == index => Some(
                                         div()
                                             .absolute()
-                                            .tab_index(1)
-                                            .bg(rgb(0xE5EFFC))
+                                            .top(px(-1.0))
+                                            .h(px(2.0))
                                             .w_full()
-                                            .h_1()
-                                            .bottom_neg_0p5(),
-                                    )
-                            })
+                                            .bg(rgb(0xE5EFFC))
+                                            .tab_index(10),
+                                    ),
+                                    Some((i, MovingElement::Bottom)) if i == index => Some(
+                                        div()
+                                            .absolute()
+                                            .bottom(px(-1.0))
+                                            .h(px(2.0))
+                                            .w_full()
+                                            .bg(rgb(0xE5EFFC))
+                                            .tab_index(10),
+                                    ),
+                                    _ => None,
+                                },
+                                |this, bar| this.child(bar),
+                            )
                     }),
             )
     }
