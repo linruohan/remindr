@@ -54,7 +54,7 @@ fn main() {
 
             let window = cx
                 .open_window(options, |window, cx| {
-                    let view = cx.new(|cx| MainScreen::new(cx));
+                    let view = cx.new(|cx| MainScreen::new(window, cx));
                     cx.new(|cx| Root::new(view.into(), window, cx))
                 })
                 .expect("failed to open window");

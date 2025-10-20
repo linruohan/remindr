@@ -10,8 +10,8 @@ pub struct MainScreen {
 }
 
 impl MainScreen {
-    pub fn new(ctx: &mut Context<Self>) -> Self {
-        let document = ctx.new(|ctx| Document::new(ctx));
+    pub fn new(window: &mut Window, ctx: &mut Context<Self>) -> Self {
+        let document = ctx.new(|ctx| Document::new(window, ctx));
         Self { document }
     }
 }

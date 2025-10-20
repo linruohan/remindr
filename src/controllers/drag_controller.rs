@@ -1,29 +1,29 @@
-use std::{cell::RefCell, rc::Rc};
-
 use gpui::{
     App, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, black, blue, div, prelude::FluentBuilder, px, rgb,
-    white,
+    StatefulInteractiveElement, Styled, Window, black, div, prelude::FluentBuilder, px, rgb, white,
 };
 use gpui_component::Icon;
+use uuid::Uuid;
+
+use crate::screens::parts::document::DocumentState;
 
 #[derive(Clone, PartialEq)]
 pub enum MovingElement {
-    Top,
-    Bottom,
+    After,
+    Before,
 }
 
 #[derive(Clone)]
 pub struct DragController {
-    pub dragging_index: Option<usize>,
-    pub hovered_drop_zone: Option<(usize, MovingElement)>,
+    pub dragging_id: Option<Uuid>,
+    pub hovered_drop_zone: Option<(Uuid, MovingElement)>,
     pub is_dragging: bool,
 }
 
 impl Default for DragController {
     fn default() -> Self {
         Self {
-            dragging_index: None,
+            dragging_id: None,
             hovered_drop_zone: None,
             is_dragging: false,
         }
@@ -31,38 +31,38 @@ impl Default for DragController {
 }
 
 impl DragController {
-    pub fn start_drag(&mut self, index: usize) {
-        self.dragging_index = Some(index);
+    pub fn start_drag(&mut self, id: Uuid) {
+        self.dragging_id = Some(id);
         self.is_dragging = true;
     }
 
     pub fn stop_drag(&mut self) {
-        self.dragging_index = None;
+        self.dragging_id = None;
         self.is_dragging = false;
         self.hovered_drop_zone = None;
     }
 
     pub fn update_hover_zone(
         &mut self,
-        index: usize,
+        id: Uuid,
         mouse_y: f32,
         bounds_top: f32,
         bounds_height: f32,
     ) -> bool {
         let middle_y = bounds_top + bounds_height / 2.0;
         let zone = if mouse_y < middle_y {
-            MovingElement::Top
+            MovingElement::After
         } else {
-            MovingElement::Bottom
+            MovingElement::Before
         };
 
         if mouse_y >= bounds_top && mouse_y <= bounds_top + bounds_height {
-            if self.hovered_drop_zone != Some((index, zone.clone())) {
-                self.hovered_drop_zone = Some((index, zone.clone()));
+            if self.hovered_drop_zone != Some((id, zone.clone())) {
+                self.hovered_drop_zone = Some((id, zone.clone()));
                 return true;
             }
         } else if let Some((i, _)) = self.hovered_drop_zone {
-            if i == index {
+            if i == id {
                 self.hovered_drop_zone = None;
                 return true;
             }
@@ -71,39 +71,37 @@ impl DragController {
         false
     }
 
-    pub fn drop_element<T: Clone>(
+    pub fn drop_element_by_index<T>(
         &mut self,
         elements: &mut Vec<T>,
+        indexed_elements: &mut Vec<Uuid>,
+        from_index: usize,
         target_index: usize,
         position: MovingElement,
     ) {
-        if let Some(from_index) = self.dragging_index {
-            if from_index == target_index {
-                self.stop_drag();
-                return;
-            }
+        let element = elements.remove(from_index);
+        let indexed_element = indexed_elements.remove(from_index);
 
-            let element = elements.remove(from_index);
-            let mut to_index = target_index;
+        let mut to_index = target_index;
 
-            match position {
-                MovingElement::Top => {
-                    if from_index < target_index {
-                        to_index = target_index.saturating_sub(1);
-                    }
-                }
-                MovingElement::Bottom => {
-                    if from_index >= target_index {
-                        to_index = target_index + 1;
-                    }
+        match position {
+            MovingElement::After => {
+                if from_index < target_index {
+                    to_index = target_index.saturating_sub(1);
                 }
             }
-
-            let final_index = to_index.clamp(0, elements.len());
-            elements.insert(final_index, element);
-
-            self.stop_drag();
+            MovingElement::Before => {
+                if from_index >= target_index {
+                    to_index = target_index + 1;
+                }
+            }
         }
+
+        let final_index = to_index.clamp(0, elements.len());
+        elements.insert(final_index, element);
+        indexed_elements.insert(final_index, indexed_element);
+
+        self.stop_drag();
     }
 
     pub fn on_outside<T>(&mut self, event: &DragMoveEvent<T>) -> bool {
@@ -116,24 +114,65 @@ impl DragController {
             || mouse_position.y > bounds.origin.y + bounds.size.height;
 
         if is_outside.clone() {
+            println!("DragController::on_outside: Mouse is outside bounds. Stopping drag.");
             self.stop_drag();
+        } else {
+            println!("DragController::on_outside: Mouse is inside bounds.");
         }
 
         is_outside
     }
 }
-pub struct DragElement<T: Clone + Render + 'static> {
-    pub element: Entity<T>,
-    pub index: usize,
-    pub controller: Rc<RefCell<DragController>>,
-    pub on_drop: Box<dyn Fn(usize, MovingElement)>,
+
+pub struct DragElement<T: Render> {
+    pub id: Uuid,
+    pub child: Entity<T>,
+    pub state: Entity<DocumentState>,
 }
 
-impl<T: Clone + Render + 'static> Render for DragElement<T> {
+impl<T: Render> DragElement<T> {
+    pub fn new(id: Uuid, state: Entity<DocumentState>, child: Entity<T>) -> Self {
+        Self { id, child, state }
+    }
+
+    fn on_drop(&self, id: Uuid, direction: MovingElement, ctx: &mut Context<Self>) {
+        let elements = self.state.read(ctx).elements.clone();
+        let indexed_elements = self.state.read(ctx).indexed_elements.clone();
+
+        let controller = self.state.read(ctx).drag_controller.clone();
+        let from_id = controller.borrow().dragging_id.unwrap();
+        println!("dd -> {}, {}", id, from_id);
+
+        let from_index = indexed_elements
+            .borrow()
+            .clone()
+            .into_iter()
+            .position(|e| e == from_id)
+            .unwrap();
+
+        let target_index = indexed_elements
+            .borrow()
+            .clone()
+            .into_iter()
+            .position(|e| e == id)
+            .unwrap();
+
+        controller.borrow_mut().drop_element_by_index(
+            &mut elements.borrow_mut(),
+            &mut indexed_elements.borrow_mut(),
+            from_index,
+            target_index,
+            direction,
+        );
+    }
+}
+
+impl<T: Render> Render for DragElement<T> {
     fn render(&mut self, _: &mut Window, ctx: &mut Context<Self>) -> impl IntoElement {
-        let index = self.index;
-        let element = self.element.clone();
-        let is_dragging = self.controller.borrow().is_dragging;
+        let element = self.child.clone();
+        let is_dragging = self.state.read(ctx).drag_controller.borrow().is_dragging;
+
+        let index = element.entity_id();
 
         div()
             .w_full()
@@ -145,6 +184,8 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
             .hover(|this| this.bg(white().opacity(0.2)))
             .on_drag_move(
                 ctx.listener(move |this, event: &DragMoveEvent<Entity<T>>, _, ctx| {
+                    let controller = this.state.read(ctx).drag_controller.clone();
+
                     let bounds = event.bounds;
                     let middle_y = bounds.origin.y + bounds.size.height / 2.0;
                     let mouse_y = event.event.position.y;
@@ -154,22 +195,20 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
 
                     if is_in_bounds {
                         let zone = if mouse_y < middle_y {
-                            MovingElement::Top
+                            MovingElement::After
                         } else {
-                            MovingElement::Bottom
+                            MovingElement::Before
                         };
 
-                        if this.controller.borrow_mut().hovered_drop_zone
-                            != Some((index, zone.clone()))
-                        {
-                            this.controller.borrow_mut().hovered_drop_zone =
-                                Some((index, zone.clone()));
+                        if controller.borrow().hovered_drop_zone != Some((this.id, zone.clone())) {
+                            controller.borrow_mut().hovered_drop_zone =
+                                Some((this.id, zone.clone()));
                             ctx.notify();
                         }
                     } else {
-                        let mut controller = this.controller.borrow_mut();
+                        let mut controller = controller.borrow_mut();
                         if let Some((i, _)) = controller.hovered_drop_zone.clone() {
-                            if i == index {
+                            if i == this.id {
                                 controller.hovered_drop_zone = None;
                                 ctx.notify();
                             }
@@ -180,8 +219,12 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 ctx.listener(move |this, _, _, ctx| {
-                    this.controller.borrow_mut().dragging_index = Some(index);
-                    this.controller.borrow_mut().is_dragging = true;
+                    {
+                        let mut controller = this.state.read(ctx).drag_controller.borrow_mut();
+
+                        controller.dragging_id = Some(this.id);
+                        controller.is_dragging = true;
+                    }
 
                     ctx.notify();
                 }),
@@ -200,7 +243,10 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
                     .when(is_dragging, |this| this.cursor_move())
                     .on_drag(
                         element.clone(),
-                        move |element, _, _window: &mut Window, _: &mut App| element.clone(),
+                        move |element, _, _window: &mut Window, _: &mut App| {
+                            println!("element {:?}", element);
+                            element.clone()
+                        },
                     ),
             )
             .child(div().flex_1().ml_10().child(element))
@@ -212,8 +258,7 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
                     .h_1_2()
                     .top_0()
                     .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
-                        this.controller.borrow_mut().is_dragging = false;
-                        (this.on_drop)(index, MovingElement::Top);
+                        this.on_drop(this.id, MovingElement::After, ctx);
                         ctx.notify();
                     }));
 
@@ -224,8 +269,7 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
                     .h_1_2()
                     .bottom_0()
                     .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
-                        this.controller.borrow_mut().is_dragging = false;
-                        (this.on_drop)(index, MovingElement::Bottom);
+                        this.on_drop(this.id, MovingElement::Before, ctx);
                         ctx.notify();
                     }));
 
@@ -233,8 +277,15 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
                     .child(bottom_dropable_zone_element)
             })
             .when_some(
-                match self.controller.borrow().hovered_drop_zone.clone() {
-                    Some((i, MovingElement::Top)) if i == index => Some(
+                match self
+                    .state
+                    .read(ctx)
+                    .drag_controller
+                    .borrow()
+                    .hovered_drop_zone
+                    .clone()
+                {
+                    Some((i, MovingElement::After)) if i == self.id => Some(
                         div()
                             .absolute()
                             .top(px(-1.0))
@@ -243,7 +294,7 @@ impl<T: Clone + Render + 'static> Render for DragElement<T> {
                             .bg(rgb(0xE5EFFC))
                             .tab_index(10),
                     ),
-                    Some((i, MovingElement::Bottom)) if i == index => Some(
+                    Some((i, MovingElement::Before)) if i == self.id => Some(
                         div()
                             .absolute()
                             .bottom(px(-1.0))
