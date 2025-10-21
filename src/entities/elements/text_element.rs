@@ -1,22 +1,44 @@
+use anyhow::Error;
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled,
     Subscription, Window, black, div, transparent_white,
 };
 use gpui_component::input::{InputEvent, InputState, TextInput};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, from_value};
 use uuid::Uuid;
 
 use crate::{
     Utils,
     controllers::drag_controller::DragElement,
-    entities::elements::{Element, ElementNode},
+    entities::elements::{AbstractElementNode, Element, ElementNode},
     screens::parts::document::DocumentState,
 };
 
 pub struct TextElement {
-    pub id: Uuid,
+    pub data: TextElementData,
     input_state: Entity<InputState>,
-    label: SharedString,
     _subscriptions: Vec<Subscription>,
+}
+
+impl AbstractElementNode<TextElement> for TextElement {
+    fn parse(
+        data: Value,
+        window: &mut Window,
+        ctx: &mut Context<Self>,
+        state: Entity<DocumentState>,
+    ) -> Result<Self, Error> {
+        let data = from_value::<TextElementData>(data)?;
+        let input_state =
+            ctx.new(|cx| InputState::new(window, cx).default_value(data.metadata.content.clone()));
+        let subscriber = Self::prepare_subscribers(&input_state, state.clone(), window, ctx);
+
+        Ok(Self {
+            data,
+            input_state,
+            _subscriptions: vec![subscriber],
+        })
+    }
 }
 
 impl TextElement {
@@ -27,19 +49,38 @@ impl TextElement {
         state: Entity<DocumentState>,
     ) -> Self {
         let input_state = ctx.new(|cx| InputState::new(window, cx));
+        let subscriber = Self::prepare_subscribers(&input_state, state.clone(), window, ctx);
 
-        let subscriber = ctx.subscribe_in(&input_state, window, {
+        let _subscriptions = vec![subscriber];
+
+        Self {
+            data: TextElementData {
+                id,
+                metadata: Metadata::default(),
+            },
+            input_state,
+            _subscriptions,
+        }
+    }
+
+    fn prepare_subscribers(
+        input_state: &Entity<InputState>,
+        state: Entity<DocumentState>,
+        window: &Window,
+        ctx: &mut Context<Self>,
+    ) -> Subscription {
+        ctx.subscribe_in(&input_state, window, {
             move |this, input_state, ev: &InputEvent, window, ctx| match ev {
                 InputEvent::Change => {
                     let value = input_state.read(ctx).value();
 
-                    if this.label.is_empty() && value.is_empty() {
+                    if this.data.metadata.content.is_empty() && value.is_empty() {
                         let elements_rc_clone = state.read(ctx).elements.clone();
                         let index = {
                             let elements_guard = elements_rc_clone.borrow();
                             elements_guard
                                 .iter()
-                                .position(|e| e.id == this.id)
+                                .position(|e| e.id == this.data.id)
                                 .unwrap_or_default()
                         };
 
@@ -61,7 +102,7 @@ impl TextElement {
                             }
                         }
                     } else {
-                        this.label = value;
+                        this.data.metadata.content = value;
                     }
 
                     ctx.notify()
@@ -74,7 +115,7 @@ impl TextElement {
                         let elements_guard = elements_rc_clone.borrow();
                         elements_guard
                             .iter()
-                            .position(|e| e.id == this.id)
+                            .position(|e| e.id == this.data.id)
                             .map(|idx| idx + 1)
                             .unwrap_or_default()
                     };
@@ -99,16 +140,7 @@ impl TextElement {
                 }
                 _ => {}
             }
-        });
-
-        let _subscriptions = vec![subscriber];
-
-        Self {
-            id,
-            label: SharedString::new("".to_string()),
-            input_state,
-            _subscriptions,
-        }
+        })
     }
 
     pub fn focus(&self, window: &mut Window, ctx: &mut Context<Self>) {
@@ -132,5 +164,24 @@ impl Render for TextElement {
                     .text_lg()
                     .text_color(black()),
             )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextElementData {
+    pub id: Uuid,
+    pub metadata: Metadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metadata {
+    content: SharedString,
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Self {
+            content: SharedString::new(""),
+        }
     }
 }

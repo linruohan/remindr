@@ -1,8 +1,11 @@
+use anyhow::Error;
 use gpui::{Context, Entity, IntoElement, Render, Window};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    Utils, controllers::drag_controller::DragElement, entities::elements::text_element::TextElement,
+    Utils, controllers::drag_controller::DragElement,
+    entities::elements::text_element::TextElement, screens::parts::document::DocumentState,
 };
 
 pub mod text_element;
@@ -36,4 +39,15 @@ impl ElementNode {
     pub fn with_id(id: Uuid, element: Entity<DragElement>) -> Self {
         Self { id, element }
     }
+}
+
+pub trait AbstractElementNode<T> {
+    fn parse(
+        payload: Value,
+        window: &mut Window,
+        ctx: &mut Context<T>,
+        state: Entity<DocumentState>,
+    ) -> Result<Self, Error>
+    where
+        Self: Sized;
 }

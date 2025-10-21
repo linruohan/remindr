@@ -2,6 +2,7 @@ use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement, Pixels, Render, Styled, Window, div,
 };
 use gpui_component::ActiveTheme;
+use serde_json::Value;
 
 use crate::screens::parts::document::Document;
 
@@ -10,8 +11,8 @@ pub struct MainScreen {
 }
 
 impl MainScreen {
-    pub fn new(window: &mut Window, ctx: &mut Context<Self>) -> Self {
-        let document = ctx.new(|ctx| Document::new(window, ctx));
+    pub fn new(entries: Vec<Value>, window: &mut Window, ctx: &mut Context<Self>) -> Self {
+        let document = ctx.new(|ctx| Document::new(entries, window, ctx));
         Self { document }
     }
 }
