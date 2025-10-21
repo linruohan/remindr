@@ -1,8 +1,9 @@
 use gpui::{
-    App, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, black, div, prelude::FluentBuilder, px, rgb, white,
+    App, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement, MouseEvent,
+    MouseMoveEvent, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder, px, rgb, white,
 };
-use gpui_component::Icon;
+use gpui_component::{ActiveTheme, Icon, IconName};
 use uuid::Uuid;
 
 use crate::screens::parts::document::DocumentState;
@@ -74,13 +75,11 @@ impl DragController {
     pub fn drop_element_by_index<T>(
         &mut self,
         elements: &mut Vec<T>,
-        indexed_elements: &mut Vec<Uuid>,
         from_index: usize,
         target_index: usize,
         position: MovingElement,
     ) {
         let element = elements.remove(from_index);
-        let indexed_element = indexed_elements.remove(from_index);
 
         let mut to_index = target_index;
 
@@ -99,7 +98,6 @@ impl DragController {
 
         let final_index = to_index.clamp(0, elements.len());
         elements.insert(final_index, element);
-        indexed_elements.insert(final_index, indexed_element);
 
         self.stop_drag();
     }
@@ -137,29 +135,20 @@ impl<T: Render> DragElement<T> {
 
     fn on_drop(&self, id: Uuid, direction: MovingElement, ctx: &mut Context<Self>) {
         let elements = self.state.read(ctx).elements.clone();
-        let indexed_elements = self.state.read(ctx).indexed_elements.clone();
 
         let controller = self.state.read(ctx).drag_controller.clone();
         let from_id = controller.borrow().dragging_id.unwrap();
-        println!("dd -> {}, {}", id, from_id);
 
-        let from_index = indexed_elements
+        let from_index = elements
             .borrow()
-            .clone()
-            .into_iter()
-            .position(|e| e == from_id)
+            .iter()
+            .position(|e| e.id == from_id)
             .unwrap();
 
-        let target_index = indexed_elements
-            .borrow()
-            .clone()
-            .into_iter()
-            .position(|e| e == id)
-            .unwrap();
+        let target_index = elements.borrow().iter().position(|e| e.id == id).unwrap();
 
         controller.borrow_mut().drop_element_by_index(
             &mut elements.borrow_mut(),
-            &mut indexed_elements.borrow_mut(),
             from_index,
             target_index,
             direction,
@@ -176,12 +165,24 @@ impl<T: Render> Render for DragElement<T> {
 
         div()
             .w_full()
-            .h_12()
             .flex()
             .justify_center()
             .items_center()
-            .bg(white())
-            .hover(|this| this.bg(white().opacity(0.2)))
+            .bg(ctx.theme().background)
+            .relative()
+            .on_mouse_move(ctx.listener(
+                move |this: &mut DragElement<T>,
+                      event: &MouseMoveEvent,
+                      _: &mut Window,
+                      cx: &mut Context<DragElement<T>>| {
+                    this.state.update(
+                        cx,
+                        |this: &mut DocumentState, _: &mut Context<DocumentState>| {
+                            this.pointer_position = Some(event.position);
+                        },
+                    );
+                },
+            ))
             .on_drag_move(
                 ctx.listener(move |this, event: &DragMoveEvent<Entity<T>>, _, ctx| {
                     let controller = this.state.read(ctx).drag_controller.clone();
@@ -231,81 +232,115 @@ impl<T: Render> Render for DragElement<T> {
             )
             .child(
                 div()
-                    .id(("item", index))
                     .absolute()
                     .left_0()
                     .flex()
-                    .justify_center()
-                    .items_center()
-                    .hover(|this| this.cursor_grab())
-                    .text_color(black())
-                    .child(Icon::default().path("icons/grip-vertical.svg").size_6())
-                    .when(is_dragging, |this| this.cursor_move())
-                    .on_drag(
-                        element.clone(),
-                        move |element, _, _window: &mut Window, _: &mut App| {
-                            println!("element {:?}", element);
-                            element.clone()
-                        },
+                    .gap_1()
+                    .child(
+                        div()
+                            .id(("add", index))
+                            .size_6()
+                            .hover(|this| {
+                                this.bg(ctx.theme().background.opacity(0.3)).cursor_grab()
+                            })
+                            .flex()
+                            .justify_center()
+                            .items_center()
+                            .child(
+                                Icon::new(IconName::Plus)
+                                    .size_5()
+                                    .text_color(ctx.theme().accent_foreground.opacity(0.5)),
+                            )
+                            .when(is_dragging, |this| this.cursor_move()),
+                    )
+                    .child(
+                        div()
+                            .id(("drag", index))
+                            .size_6()
+                            .hover(|this| {
+                                this.bg(ctx.theme().background.opacity(0.3)).cursor_grab()
+                            })
+                            .flex()
+                            .justify_center()
+                            .items_center()
+                            .child(
+                                Icon::default()
+                                    .path("icons/grip-vertical.svg")
+                                    .size_5()
+                                    .text_color(ctx.theme().accent_foreground.opacity(0.5)),
+                            )
+                            .when(is_dragging, |this| this.cursor_move())
+                            .on_drag(
+                                element.clone(),
+                                move |element, _, _window: &mut Window, _: &mut App| {
+                                    element.clone()
+                                },
+                            ),
                     ),
             )
-            .child(div().flex_1().ml_10().child(element))
-            .when(is_dragging, |this| {
-                let top_dropable_zone_element = div()
-                    .absolute()
-                    .tab_index(2)
-                    .w_full()
-                    .h_1_2()
-                    .top_0()
-                    .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
-                        this.on_drop(this.id, MovingElement::After, ctx);
-                        ctx.notify();
-                    }));
-
-                let bottom_dropable_zone_element = div()
-                    .absolute()
-                    .tab_index(2)
-                    .w_full()
-                    .h_1_2()
-                    .bottom_0()
-                    .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
-                        this.on_drop(this.id, MovingElement::Before, ctx);
-                        ctx.notify();
-                    }));
-
-                this.child(top_dropable_zone_element)
-                    .child(bottom_dropable_zone_element)
-            })
-            .when_some(
-                match self
-                    .state
-                    .read(ctx)
-                    .drag_controller
-                    .borrow()
-                    .hovered_drop_zone
-                    .clone()
-                {
-                    Some((i, MovingElement::After)) if i == self.id => Some(
-                        div()
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .ml_10()
+                    .child(element)
+                    .when(is_dragging, |this| {
+                        let top_dropable_zone_element = div()
                             .absolute()
-                            .top(px(-1.0))
-                            .h(px(2.0))
+                            .tab_index(2)
                             .w_full()
-                            .bg(rgb(0xE5EFFC))
-                            .tab_index(10),
-                    ),
-                    Some((i, MovingElement::Before)) if i == self.id => Some(
-                        div()
+                            .h_1_2()
+                            .top_0()
+                            .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
+                                this.on_drop(this.id, MovingElement::After, ctx);
+                                ctx.notify();
+                            }));
+
+                        let bottom_dropable_zone_element = div()
                             .absolute()
-                            .bottom(px(-1.0))
-                            .h(px(2.0))
+                            .tab_index(2)
                             .w_full()
-                            .bg(rgb(0xE5EFFC))
-                            .tab_index(10),
+                            .h_1_2()
+                            .bottom_0()
+                            .on_drop(ctx.listener(move |this, _: &Entity<T>, _, ctx| {
+                                this.on_drop(this.id, MovingElement::Before, ctx);
+                                ctx.notify();
+                            }));
+
+                        this.child(top_dropable_zone_element)
+                            .child(bottom_dropable_zone_element)
+                    })
+                    .when_some(
+                        match self
+                            .state
+                            .read(ctx)
+                            .drag_controller
+                            .borrow()
+                            .hovered_drop_zone
+                            .clone()
+                        {
+                            Some((i, MovingElement::After)) if i == self.id => Some(
+                                div()
+                                    .absolute()
+                                    .top(px(-2.0))
+                                    .h(px(4.0))
+                                    .w_full()
+                                    .bg(ctx.theme().accent_foreground.opacity(0.5))
+                                    .tab_index(10),
+                            ),
+                            Some((i, MovingElement::Before)) if i == self.id => Some(
+                                div()
+                                    .absolute()
+                                    .bottom(px(-2.0))
+                                    .h(px(4.0))
+                                    .w_full()
+                                    .bg(ctx.theme().accent_foreground.opacity(0.5))
+                                    .tab_index(10),
+                            ),
+                            _ => None,
+                        },
+                        |this, bar| this.child(bar),
                     ),
-                    _ => None,
-                },
-                |this, bar| this.child(bar),
             )
     }
 }

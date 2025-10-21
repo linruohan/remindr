@@ -6,7 +6,10 @@ use gpui_component::input::{InputEvent, InputState, TextInput};
 use uuid::Uuid;
 
 use crate::{
-    Utils, controllers::drag_controller::DragElement, screens::parts::document::DocumentState,
+    Utils,
+    controllers::drag_controller::DragElement,
+    entities::elements::{Element, ElementNode},
+    screens::parts::document::DocumentState,
 };
 
 pub struct TextElement {
@@ -23,43 +26,70 @@ impl TextElement {
         ctx: &mut Context<Self>,
         state: Entity<DocumentState>,
     ) -> Self {
-        let input_state = ctx.new(|cx| InputState::new(window, cx).placeholder("Enter your name"));
+        let input_state = ctx.new(|cx| InputState::new(window, cx));
 
-        let _subscriptions = vec![ctx.subscribe_in(&input_state, window, {
-            let input_state = input_state.clone();
-            move |this, _, ev: &InputEvent, window, ctx| match ev {
+        let subscriber = ctx.subscribe_in(&input_state, window, {
+            move |this, input_state, ev: &InputEvent, window, ctx| match ev {
                 InputEvent::Change => {
                     let value = input_state.read(ctx).value();
                     this.label = value;
+
+                    if this.label.is_empty() {
+                        let elements_rc_clone = state.read(ctx).elements.clone();
+                        let index = {
+                            let elements_guard = elements_rc_clone.borrow();
+                            elements_guard
+                                .iter()
+                                .position(|e| e.id == this.id)
+                                .unwrap_or_default()
+                        };
+
+                        {
+                            let mut elements = elements_rc_clone.borrow_mut();
+                            elements.remove(index);
+                        }
+
+                        // {
+                        //     let elements_guard = elements_rc_clone.borrow();
+                        //     let previous_element = elements_guard.get(index.saturating_sub(1));
+
+                        //     if let Some(previous_element) = previous_element {
+                        //         match previous_element {
+                        //             Element::Text(element) => {
+                        //                 element.focus();
+                        //             }
+                        //             _ => {}
+                        //         }
+                        //     }
+                        // }
+                    };
 
                     ctx.notify()
                 }
                 InputEvent::PressEnter { .. } => {
                     let id = Utils::generate_uuid();
                     let elements_rc_clone = state.read(ctx).elements.clone();
-                    let indexed_elements_rc_clone = state.read(ctx).indexed_elements.clone();
 
                     let insertion_index = {
                         let elements_guard = elements_rc_clone.borrow();
                         elements_guard
                             .iter()
-                            .position(|e| e.read(ctx).id == this.id)
+                            .position(|e| e.id == this.id)
                             .map(|idx| idx + 1)
                             .unwrap_or_default()
                     };
 
                     let text_element =
-                        ctx.new(|ctx| TextElement::new(id.clone(), window, ctx, state.clone()));
+                        ctx.new(|ctx| TextElement::new(id, window, ctx, state.clone()));
 
                     let element =
                         ctx.new(|_ctx| DragElement::new(id, state.clone(), text_element.clone()));
 
+                    let node = ElementNode::with_id(id, Element::Text(element));
+
                     {
                         let mut elements = elements_rc_clone.borrow_mut();
-                        elements.insert(insertion_index, element.clone());
-
-                        let mut indexed_elements = indexed_elements_rc_clone.borrow_mut();
-                        indexed_elements.insert(insertion_index, id);
+                        elements.insert(insertion_index, node);
                     }
 
                     text_element.update(ctx, |text_element_inner, ctx| {
@@ -68,7 +98,9 @@ impl TextElement {
                 }
                 _ => {}
             }
-        })];
+        });
+
+        let _subscriptions = vec![subscriber];
 
         Self {
             id,

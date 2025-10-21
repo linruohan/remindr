@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use anyhow::anyhow;
 use gpui::*;
-use gpui_component::Root;
+use gpui_component::{ActiveTheme, Root};
 use remindr::screens::main_screen::MainScreen;
 use rust_embed::RustEmbed;
 
