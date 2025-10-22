@@ -5,20 +5,21 @@ use uuid::Uuid;
 
 use crate::{
     Utils, controllers::drag_controller::DragElement,
-    entities::elements::text_element::TextElement, screens::parts::document::DocumentState,
+    entities::ui::elements::text::text_element::TextElement,
+    screens::parts::document::DocumentState,
 };
 
-pub mod text_element;
+pub mod text;
 
 #[derive(Clone)]
-pub enum Element {
+pub enum RemindrElement {
     Text(Entity<TextElement>),
 }
 
-impl Render for Element {
+impl Render for RemindrElement {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         match &self {
-            Element::Text(element) => element.clone(),
+            RemindrElement::Text(element) => element.clone(),
         }
     }
 }
@@ -41,7 +42,7 @@ impl ElementNode {
     }
 }
 
-pub trait AbstractElementNode<T> {
+pub trait ElementNodeParser<T> {
     fn parse(
         payload: Value,
         window: &mut Window,

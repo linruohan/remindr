@@ -6,7 +6,7 @@ use gpui::{
 use gpui_component::{ActiveTheme, Icon, IconName};
 use uuid::Uuid;
 
-use crate::{entities::elements::Element, screens::parts::document::DocumentState};
+use crate::{entities::ui::elements::RemindrElement, screens::parts::document::DocumentState};
 
 #[derive(Clone, PartialEq)]
 pub enum MovingElement {
@@ -106,10 +106,6 @@ impl DragController {
         let mouse_position = event.event.position;
         let bounds = event.bounds;
 
-        //     bounds.origin.x,
-        //     mouse_position.x < bounds.origin.x
-        // );
-
         let is_outside = mouse_position.x < bounds.origin.x
             || mouse_position.y < bounds.origin.y
             || mouse_position.x > bounds.origin.x + bounds.size.width
@@ -125,12 +121,12 @@ impl DragController {
 
 pub struct DragElement {
     pub id: Uuid,
-    pub child: Element,
+    pub child: RemindrElement,
     pub state: Entity<DocumentState>,
 }
 
 impl DragElement {
-    pub fn new(id: Uuid, state: Entity<DocumentState>, child: Element) -> Self {
+    pub fn new(id: Uuid, state: Entity<DocumentState>, child: RemindrElement) -> Self {
         Self { id, child, state }
     }
 
@@ -170,8 +166,8 @@ impl Render for DragElement {
             .items_center()
             .bg(ctx.theme().background)
             .relative()
-            .on_drag_move(
-                ctx.listener(move |this, event: &DragMoveEvent<Element>, _, ctx| {
+            .on_drag_move(ctx.listener(
+                move |this, event: &DragMoveEvent<RemindrElement>, _, ctx| {
                     let controller = this.state.read(ctx).drag_controller.clone();
 
                     let bounds = event.bounds;
@@ -203,8 +199,8 @@ impl Render for DragElement {
                             }
                         }
                     }
-                }),
-            )
+                },
+            ))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 ctx.listener(move |this, _, _, ctx| {
@@ -274,7 +270,7 @@ impl Render for DragElement {
                     .flex_1()
                     .ml_12()
                     .child(match element.clone() {
-                        Element::Text(element) => element.clone(),
+                        RemindrElement::Text(element) => element.clone(),
                     })
                     .when_some(
                         match self
@@ -314,7 +310,7 @@ impl Render for DragElement {
                     .w_full()
                     .h_1_2()
                     .top_0()
-                    .on_drop(ctx.listener(move |this, _: &Element, _, ctx| {
+                    .on_drop(ctx.listener(move |this, _: &RemindrElement, _, ctx| {
                         this.on_drop(this.id, MovingElement::After, ctx);
                         ctx.notify();
                     }));
@@ -325,7 +321,7 @@ impl Render for DragElement {
                     .w_full()
                     .h_1_2()
                     .bottom_0()
-                    .on_drop(ctx.listener(move |this, _: &Element, _, ctx| {
+                    .on_drop(ctx.listener(move |this, _: &RemindrElement, _, ctx| {
                         this.on_drop(this.id, MovingElement::Before, ctx);
                         ctx.notify();
                     }));

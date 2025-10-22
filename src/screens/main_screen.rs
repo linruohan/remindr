@@ -2,17 +2,18 @@ use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement, Pixels, Render, Styled, Window, div,
 };
 use gpui_component::ActiveTheme;
-use serde_json::Value;
 
-use crate::screens::parts::document::Document;
+use crate::{entities::document_parser::DocumentParser, screens::parts::document::Document};
 
 pub struct MainScreen {
     document: Entity<Document>,
 }
 
 impl MainScreen {
-    pub fn new(entries: Vec<Value>, window: &mut Window, ctx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, ctx: &mut Context<Self>) -> Self {
+        let entries = DocumentParser::load_file("artifacts/demo.json");
         let document = ctx.new(|ctx| Document::new(entries, window, ctx));
+
         Self { document }
     }
 }

@@ -1,13 +1,10 @@
-use std::{borrow::Cow, io::read_to_string};
+use std::borrow::Cow;
 
 use anyhow::anyhow;
 use gpui::*;
 use gpui_component::Root;
 use remindr::screens::main_screen::MainScreen;
 use rust_embed::RustEmbed;
-
-use serde_json::{Value, from_str};
-use std::fs;
 
 #[derive(RustEmbed)]
 #[folder = "./assets"]
@@ -29,11 +26,6 @@ impl AssetSource for Assets {
 }
 
 fn main() {
-    let file_content = fs::read_to_string("artifacts/demo.json").expect("Failed to read demo.json");
-
-    let json_data: Vec<Value> =
-        from_str(&file_content).expect("Failed to parse JSON from demo.json");
-
     let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
@@ -62,7 +54,7 @@ fn main() {
 
             let window = cx
                 .open_window(options, |window, cx| {
-                    let view = cx.new(|cx| MainScreen::new(json_data, window, cx));
+                    let view = cx.new(|cx| MainScreen::new(window, cx));
                     cx.new(|cx| Root::new(view.into(), window, cx))
                 })
                 .expect("failed to open window");

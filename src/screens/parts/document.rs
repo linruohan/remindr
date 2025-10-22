@@ -7,9 +7,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    Utils,
     controllers::drag_controller::{DragController, DragElement},
-    entities::elements::{AbstractElementNode, Element, ElementNode, text_element::TextElement},
+    entities::ui::elements::{
+        ElementNode, ElementNodeParser, RemindrElement, text::text_element::TextElement,
+    },
 };
 
 pub struct DocumentState {
@@ -35,7 +36,7 @@ impl Document {
             let id = Uuid::parse_str(entry.get("id").unwrap().as_str().unwrap()).unwrap();
 
             let element = match element_type {
-                "text" => Element::Text(
+                "text" => RemindrElement::Text(
                     ctx.new(|ctx| TextElement::parse(entry, window, ctx, state.clone()).unwrap()),
                 ),
                 _ => panic!("Unknown element type"),
@@ -65,14 +66,14 @@ impl Render for Document {
                 div()
                     .max_w(px(820.0))
                     .w_full()
-                    .on_drag_move(
-                        ctx.listener(move |_, event: &DragMoveEvent<Element>, _, ctx| {
+                    .on_drag_move(ctx.listener(
+                        move |_, event: &DragMoveEvent<RemindrElement>, _, ctx| {
                             let is_outside = controller.borrow_mut().on_outside(event);
                             if is_outside {
                                 ctx.notify();
                             }
-                        }),
-                    )
+                        },
+                    ))
                     .children(
                         elements
                             .borrow()
@@ -87,7 +88,7 @@ impl Render for Document {
                         div().child(format!(
                             "-> {:?}",
                             match node.element.read(ctx).child.clone() {
-                                Element::Text(text) => text.read(ctx).data.clone(),
+                                RemindrElement::Text(text) => text.read(ctx).data.clone(),
                             }
                         ))
                     })),
