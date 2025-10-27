@@ -3,7 +3,7 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
     Window, div, prelude::FluentBuilder, px,
 };
-use gpui_component::{ActiveTheme, Icon, IconName};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use uuid::Uuid;
 
 use crate::{
@@ -269,6 +269,7 @@ impl Render for DragElement {
                     .ml_12()
                     .w_full()
                     .child(entity_child)
+                    .tab_index(0)
                     .when_some(
                         match hovered_drop_zone {
                             Some((i, MovingElement::After)) if i == self.id => Some(
@@ -277,7 +278,7 @@ impl Render for DragElement {
                                     .top(px(-2.0))
                                     .h(px(4.0))
                                     .w_full()
-                                    .bg(cx.theme().accent_foreground.opacity(0.5))
+                                    .border_color(cx.theme().accent_foreground.opacity(0.5))
                                     .tab_index(10),
                             ),
                             Some((i, MovingElement::Before)) if i == self.id => Some(

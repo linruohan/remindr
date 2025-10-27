@@ -3,7 +3,7 @@ use std::f64::INFINITY;
 use anyhow::{Error, Ok};
 use gpui::{
     AppContext, BorrowAppContext, Context, Entity, IntoElement, ParentElement, Render,
-    SharedString, Styled, Subscription, Window, div, prelude::FluentBuilder, transparent_white,
+    SharedString, Styled, Subscription, Window, div, prelude::FluentBuilder, px, transparent_white,
 };
 use gpui_component::{
     StyledExt,
@@ -149,7 +149,7 @@ impl TextElement {
 
 impl Render for TextElement {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().w_full().child(
+        div().min_w(px(820.0)).w_full().child(
             TextInput::new(&self.input_state)
                 .bordered(false)
                 .bg(transparent_white()),
