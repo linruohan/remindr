@@ -4,12 +4,9 @@ use gpui::{AppContext, Context, Window};
 use serde_json::{Value, from_str};
 use uuid::Uuid;
 
-use crate::{
-    controllers::drag_controller::DragElement,
-    entities::ui::elements::{
-        ElementNode, ElementNodeParser, RemindrElement, divider::divider_element::DividerElement,
-        text::text_element::TextElement,
-    },
+use crate::entities::ui::elements::{
+    ElementNodeParser, RemindrElement, divider::divider_element::DividerElement,
+    text::text_element::TextElement, title::title_element::TitleElement,
 };
 
 pub struct DocumentParser;
@@ -49,6 +46,10 @@ impl DocumentParser {
             "text" => {
                 let element = cx.new(|cx| TextElement::parse(entry, window, cx).unwrap());
                 RemindrElement::Text(element)
+            }
+            "title" => {
+                let element = cx.new(|cx| TitleElement::parse(entry, window, cx).unwrap());
+                RemindrElement::Title(element)
             }
             "divider" => {
                 let element = cx.new(|cx| DividerElement::parse(entry, window, cx).unwrap());

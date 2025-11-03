@@ -18,17 +18,17 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct TextElement {
-    pub data: TextElementData,
+pub struct TitleElement {
+    pub data: TitleElementData,
     input_state: Entity<InputState>,
     show_contextual_menu: bool,
     menu: Entity<Menu>,
     is_focus: bool,
 }
 
-impl ElementNodeParser for TextElement {
+impl ElementNodeParser for TitleElement {
     fn parse(data: &Value, window: &mut Window, cx: &mut Context<Self>) -> Result<Self, Error> {
-        let data = from_value::<TextElementData>(data.clone())?;
+        let data = from_value::<TitleElementData>(data.clone())?;
 
         let input_state = Self::init(data.metadata.content.clone(), window, cx);
         let menu = cx.new(|cx| Menu::new(window, cx));
@@ -43,16 +43,19 @@ impl ElementNodeParser for TextElement {
     }
 }
 
-impl TextElement {
+impl TitleElement {
     pub fn new(id: Uuid, window: &mut Window, cx: &mut Context<Self>) -> Result<Self, Error> {
         let content = SharedString::new("");
         let input_state = Self::init(content.clone(), window, cx);
         let menu = cx.new(|cx| Menu::new(window, cx));
 
         Ok(Self {
-            data: TextElementData {
+            data: TitleElementData {
                 id,
-                metadata: Metadata { content },
+                metadata: Metadata {
+                    content,
+                    ..Default::default()
+                },
             },
             input_state,
             show_contextual_menu: false,
@@ -178,8 +181,8 @@ impl TextElement {
             .map(|idx| idx + 1)
             .unwrap_or_default();
 
-        let text_element = cx.new(|cx| TextElement::new(id, window, cx).unwrap());
-        let element = RemindrElement::Text(text_element.clone());
+        let text_element = cx.new(|cx| TitleElement::new(id, window, cx).unwrap());
+        let element = RemindrElement::Title(text_element.clone());
         let drag_element = cx.new(|cx| DragElement::new(id, element, cx));
         let element_node = ElementNode::with_id(id, drag_element);
 
@@ -217,7 +220,7 @@ impl TextElement {
     }
 }
 
-impl Render for TextElement {
+impl Render for TitleElement {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .min_w(px(820.0))
@@ -225,6 +228,7 @@ impl Render for TextElement {
             .child(
                 Input::new(&self.input_state)
                     .bordered(false)
+                    .text_3xl()
                     .bg(transparent_white()),
             )
             .when(self.show_contextual_menu, |this| {
@@ -234,7 +238,7 @@ impl Render for TextElement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TextElementData {
+pub struct TitleElementData {
     pub id: Uuid,
     pub metadata: Metadata,
 }
@@ -242,12 +246,14 @@ pub struct TextElementData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
     pub content: SharedString,
+    pub level: u32,
 }
 
 impl Default for Metadata {
     fn default() -> Self {
         Self {
             content: SharedString::new(""),
+            level: 1,
         }
     }
 }
