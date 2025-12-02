@@ -1,9 +1,12 @@
 use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{ActiveTheme, Icon, IconName};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::states::node_state::{MovingElement, NodeState};
+use crate::{
+    entities::nodes::{NodePayload, RemindrElement, node::RemindrNode, text::data::TextMetadata},
+    states::node_state::{MovingElement, NodeState},
+};
 
 pub struct NodeRenderer {
     state: Entity<NodeState>,
@@ -14,15 +17,16 @@ pub struct DraggableInfo {
 }
 
 impl NodeRenderer {
-    pub fn new(nodes: Vec<Value>, window: &mut Window, app: &mut App) -> Self {
-        let mut state = NodeState::default();
+    pub fn new(nodes: Vec<Value>, window: &mut Window, cx: &mut App) -> Self {
+        let state = cx.new(|_| NodeState::default());
 
-        for value in nodes.into_iter() {
-            let node = state.parse_node(&value, window, app);
-            state.push_node(&node);
-        }
+        state.update(cx, |this, cx| {
+            for value in nodes.into_iter() {
+                let node = this.parse_node(&value, &state, window, cx);
+                this.push_node(&node);
+            }
+        });
 
-        let state = app.new(|_| state);
         Self { state }
     }
 
@@ -72,15 +76,26 @@ impl NodeRenderer {
             }
         });
     }
+
+    fn on_create_text_zone(
+        this: &mut Self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        this.state.update(cx, |state, cx| {
+            state.push_node(&RemindrElement::create_node(
+                NodePayload::Text((TextMetadata::default(), true)),
+                &this.state,
+                window,
+                cx,
+            ));
+        })
+    }
 }
 
 impl Render for NodeRenderer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        {
-            self.state
-                .update(cx, |state, cx| state.register_state(self.state.clone(), cx));
-        }
-
         let state = self.state.read(cx);
         let nodes = state.get_nodes().clone();
 
@@ -97,6 +112,8 @@ impl Render for NodeRenderer {
                     },
                 ))
                 .relative()
+                .flex()
+                .items_center()
                 .child(
                     div()
                         .invisible()
@@ -211,5 +228,14 @@ impl Render for NodeRenderer {
             .size_full()
             .bg(cx.theme().background)
             .children(children)
+            .child(
+                div()
+                    .id("add_element")
+                    .cursor_pointer()
+                    .ml_12()
+                    .h_20()
+                    .w_full()
+                    .on_click(cx.listener(Self::on_create_text_zone)),
+            )
     }
 }

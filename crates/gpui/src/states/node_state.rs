@@ -2,7 +2,7 @@ use gpui::{App, AppContext, DragMoveEvent, Entity, Window};
 use serde_json::{Value, from_value};
 use uuid::Uuid;
 
-use crate::entities::ui::nodes::{
+use crate::entities::nodes::{
     RemindrElement,
     divider::divider_node::DividerNode,
     heading::heading_node::HeadingNode,
@@ -29,21 +29,8 @@ impl NodeState {
         &self.elements
     }
 
-    pub fn register_state(&self, state: Entity<Self>, cx: &mut App) {
-        self.elements
-            .clone()
-            .iter_mut()
-            .for_each(|node| match &node.element {
-                RemindrElement::Divider(divider) => {
-                    divider.update(cx, |this, _| this.state = Some(state.clone()))
-                }
-                RemindrElement::Title(heading) => {
-                    heading.update(cx, |this, _| this.state = Some(state.clone()))
-                }
-                RemindrElement::Text(text) => {
-                    text.update(cx, |this, _| this.state = Some(state.clone()))
-                }
-            });
+    pub fn get_current_nodes(&self, id: Uuid) -> Option<&RemindrNode> {
+        self.elements.iter().find(|element| element.id == id)
     }
 
     pub fn start_drag(&mut self, id: Uuid) {
@@ -131,16 +118,22 @@ impl NodeState {
         is_outside
     }
 
-    pub fn parse_node(&self, value: &Value, window: &mut Window, app: &mut App) -> RemindrNode {
+    pub fn parse_node(
+        &self,
+        value: &Value,
+        state: &Entity<NodeState>,
+        window: &mut Window,
+        app: &mut App,
+    ) -> RemindrNode {
         let partial_node = from_value::<PartialRemindrNode>(value.clone()).unwrap();
         let element = match partial_node.node_type {
             RemindrNodeType::Text => {
-                let element = app.new(|cx| TextNode::parse(value, window, cx).unwrap());
+                let element = app.new(|cx| TextNode::parse(value, state, window, cx).unwrap());
                 RemindrElement::Text(element)
             }
             RemindrNodeType::Title => {
-                let element = app.new(|cx| HeadingNode::parse(value, window, cx).unwrap());
-                RemindrElement::Title(element)
+                let element = app.new(|cx| HeadingNode::parse(value, state, window, cx).unwrap());
+                RemindrElement::Heading(element)
             }
             RemindrNodeType::Divider => {
                 let element = app.new(|cx| DividerNode::parse(value, window, cx).unwrap());

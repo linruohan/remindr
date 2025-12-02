@@ -1,12 +1,18 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::ui::nodes::RemindrElement;
+use crate::entities::nodes::RemindrElement;
 
 #[derive(Clone)]
 pub struct RemindrNode {
     pub id: Uuid,
     pub element: RemindrElement,
+}
+
+impl RemindrNode {
+    pub fn new(id: Uuid, element: RemindrElement) -> Self {
+        Self { id, element }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

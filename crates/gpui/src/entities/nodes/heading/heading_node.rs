@@ -8,12 +8,12 @@ use serde_json::{Value, from_value, to_value};
 use crate::{
     Utils,
     components::slash_menu::SlashMenu,
-    entities::ui::nodes::{
+    entities::nodes::{
         RemindrElement,
         heading::data::HeadingNodeData,
         node::RemindrNode,
         text::{
-            data::{Metadata as TextMetadata, TextNodeData},
+            data::{TextMetadata, TextNodeData},
             text_node::TextNode,
         },
     },
@@ -21,39 +21,26 @@ use crate::{
 };
 
 pub struct HeadingNode {
-    pub state: Option<Entity<NodeState>>,
+    pub state: Entity<NodeState>,
     pub data: HeadingNodeData,
-    input_state: Entity<InputState>,
+    pub input_state: Entity<InputState>,
     show_contextual_menu: bool,
     menu: Entity<SlashMenu>,
     is_focus: bool,
 }
 
 impl HeadingNode {
-    pub fn parse(data: &Value, window: &mut Window, cx: &mut Context<Self>) -> Result<Self, Error> {
-        let data = from_value::<HeadingNodeData>(data.clone())?;
-
-        let input_state = Self::init(data.metadata.content.clone(), window, cx);
-        let menu = cx.new(|cx| SlashMenu::new(window, cx));
-
-        Ok(Self {
-            state: None,
-            data,
-            input_state,
-            show_contextual_menu: false,
-            menu,
-            is_focus: false,
-        })
-    }
-
-    fn init(
-        content: SharedString,
+    pub fn parse(
+        data: &Value,
+        state: &Entity<NodeState>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Entity<InputState> {
+    ) -> Result<Self, Error> {
+        let data = from_value::<HeadingNodeData>(data.clone())?;
+
         let input_state = cx.new(|cx| {
             InputState::new(window, cx)
-                .default_value(content)
+                .default_value(data.metadata.content.clone())
                 .auto_grow(1, INFINITY as usize)
                 .soft_wrap(true)
         });
@@ -68,7 +55,16 @@ impl HeadingNode {
         })
         .detach();
 
-        input_state
+        let menu = cx.new(|cx| SlashMenu::new(data.id, state, window, cx));
+
+        Ok(Self {
+            state: state.clone(),
+            data,
+            input_state,
+            show_contextual_menu: false,
+            menu,
+            is_focus: false,
+        })
     }
 
     fn on_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -104,32 +100,28 @@ impl HeadingNode {
         }
 
         if self.data.metadata.content.is_empty() && input_state_value.is_empty() {
-            if let Some(state) = self.state.clone() {
-                state.update(cx, |state, cx| {
-                    if !state.get_nodes().is_empty() {
-                        let previous_element = state.get_previous_node(self.data.id);
-                        state.remove_node(self.data.id);
+            self.state.update(cx, |state, cx| {
+                if !state.get_nodes().is_empty() {
+                    let previous_element = state.get_previous_node(self.data.id);
+                    state.remove_node(self.data.id);
 
-                        if let Some(previous_element) = previous_element {
-                            if let RemindrElement::Text(element) = previous_element.element.clone()
-                            {
-                                element.update(cx, |this, cx| {
-                                    this.focus(window, cx);
-                                    this.move_cursor_end(window, cx);
-                                });
-                            }
+                    if let Some(previous_element) = previous_element {
+                        if let RemindrElement::Text(element) = previous_element.element.clone() {
+                            element.update(cx, |this, cx| {
+                                this.focus(window, cx);
+                                this.move_cursor_end(window, cx);
+                            });
+                        }
 
-                            if let RemindrElement::Title(element) = previous_element.element.clone()
-                            {
-                                element.update(cx, |this, cx| {
-                                    this.focus(window, cx);
-                                    this.move_cursor_end(window, cx);
-                                });
-                            }
+                        if let RemindrElement::Heading(element) = previous_element.element.clone() {
+                            element.update(cx, |this, cx| {
+                                this.focus(window, cx);
+                                this.move_cursor_end(window, cx);
+                            });
                         }
                     }
-                });
-            }
+                }
+            });
         } else {
             self.data.metadata.content = input_state_value;
         }
@@ -141,32 +133,23 @@ impl HeadingNode {
             state.set_value(value.trim().to_string(), window, cx);
         });
 
-        if let Some(state) = self.state.clone() {
-            self.is_focus = false;
-            self.show_contextual_menu = false;
-            self.menu.update(cx, |state, _| state.search = None);
+        self.is_focus = false;
+        self.show_contextual_menu = false;
+        self.menu.update(cx, |state, _| state.search = None);
 
-            state.update(cx, |state, cx| {
-                let id = Utils::generate_uuid();
-                let data = to_value(TextNodeData {
-                    id,
-                    metadata: TextMetadata::default(),
-                })
-                .unwrap();
+        self.state.update(cx, |state, cx| {
+            let id = Utils::generate_uuid();
+            let data = to_value(TextNodeData::new(id, TextMetadata::default())).unwrap();
 
-                let element = cx.new(|cx| TextNode::parse(&data, window, cx).unwrap());
-                element.update(cx, |this, cx| {
-                    this.focus(window, cx);
-                });
-
-                let node = RemindrNode {
-                    id,
-                    element: RemindrElement::Text(element),
-                };
-
-                state.insert_node_after(self.data.id, &node);
+            let element = cx.new(|cx| TextNode::parse(&data, &self.state, window, cx).unwrap());
+            element.update(cx, |this, cx| {
+                this.focus(window, cx);
             });
-        }
+
+            let node = RemindrNode::new(id, RemindrElement::Text(element));
+
+            state.insert_node_after(self.data.id, &node);
+        });
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
