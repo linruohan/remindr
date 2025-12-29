@@ -1,15 +1,15 @@
 use anyhow::Result;
 use std::future::Future;
 
-use crate::domain::database::document::Document;
+use crate::domain::database::document::DocumentModel;
 
 pub trait DocumentRepositoryPort: Send + Sync {
-    type ListFuture<'a>: Future<Output = Result<Vec<Document>>> + Send + 'a
+    type ListFuture<'a>: Future<Output = Result<Vec<DocumentModel>>> + Send + 'a
     where
         Self: 'a;
 
     /// Future renvoyé par `get`.
-    type GetFuture<'a>: Future<Output = Result<Option<Document>>> + Send + 'a
+    type GetFuture<'a>: Future<Output = Result<Option<DocumentModel>>> + Send + 'a
     where
         Self: 'a;
 
@@ -19,5 +19,5 @@ pub trait DocumentRepositoryPort: Send + Sync {
 
     fn list<'a>(&'a self) -> Self::ListFuture<'a>;
     fn get<'a>(&'a self, id: i32) -> Self::GetFuture<'a>;
-    fn save<'a>(&'a self, document: Document) -> Self::SaveFuture<'a>;
+    fn save<'a>(&'a self, document: DocumentModel) -> Self::SaveFuture<'a>;
 }

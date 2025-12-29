@@ -17,7 +17,7 @@ use crate::{
     },
 };
 use gpui::{AnyElement, App, AppContext, Context, Entity, IntoElement, Render, RenderOnce, Window};
-use serde_json::to_value;
+use serde_json::{Value, to_value};
 
 pub enum NodePayload {
     Text((TextMetadata, bool)),
@@ -33,6 +33,14 @@ pub enum RemindrElement {
 }
 
 impl RemindrElement {
+    pub fn get_data(&self, cx: &mut App) -> Value {
+        match self {
+            RemindrElement::Text(text) => to_value(text.read(cx).data.clone()).unwrap(),
+            RemindrElement::Divider(divider) => to_value(divider.read(cx).data.clone()).unwrap(),
+            RemindrElement::Heading(heading) => to_value(heading.read(cx).data.clone()).unwrap(),
+        }
+    }
+
     pub fn create_node(
         payload: NodePayload,
         state: &Entity<NodeState>,

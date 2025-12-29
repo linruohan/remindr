@@ -1,6 +1,7 @@
 use gpui::*;
 use gpui_component::{
-    Collapsible, Icon, IconName,
+    Collapsible, Icon, IconName, WindowExt,
+    notification::{Notification, NotificationType},
     sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem},
 };
 use smol::block_on;
@@ -12,11 +13,11 @@ use crate::{
             app_state::AppState, document_state::DocumentState, repository_state::RepositoryState,
         },
     },
-    domain::database::document::Document,
+    domain::database::document::DocumentModel,
 };
 
 pub struct AppSidebar {
-    documents: Option<Vec<Document>>,
+    documents: Option<Vec<DocumentModel>>,
     app_state: Entity<AppState>,
 }
 
@@ -63,33 +64,49 @@ impl Render for AppSidebar {
             documents
                 .into_iter()
                 .map(|document| {
-                    let document_id = document.id.to_string();
-                    let document_title = document.title.clone();
-                    let document_content = document.content.as_array().unwrap().clone();
-
-                    SidebarMenuItem::new(document_title.clone())
+                    let document_id = document.id.clone();
+                    SidebarMenuItem::new(document.title.clone())
                         .icon(IconName::File)
                         .on_click(cx.listener({
-                            let document_id = document_id.clone();
                             move |this, _, window, cx| {
-                                cx.update_global::<DocumentState, _>(|state, cx| {
-                                    state.add_document_and_focus(
-                                        document_id.clone(),
-                                        document_title.clone(),
-                                        document_content.clone(),
-                                        window,
-                                        cx,
-                                    );
+                                let document = block_on(async {
+                                    cx.global::<RepositoryState>()
+                                        .documents
+                                        .get_document_by_id(document_id)
+                                        .await
                                 });
 
-                                this.app_state.update(cx, |app_state, cx| {
-                                    let document_screen = DocumentScreen::new(cx.weak_entity());
-                                    app_state.navigator.push(document_screen, cx);
-                                });
+                                match document {
+                                    Ok(document) => {
+                                        cx.update_global::<DocumentState, _>(|state, cx| {
+                                            state.add_document_and_focus(
+                                                document.id.clone(),
+                                                document.title.clone(),
+                                                document.content.as_array().unwrap().clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        });
+
+                                        this.app_state.update(cx, |app_state, cx| {
+                                            let document_screen =
+                                                DocumentScreen::new(cx.weak_entity());
+                                            app_state.navigator.push(document_screen, cx);
+                                        });
+                                    }
+                                    Err(error) => {
+                                        window.push_notification(
+                                            Notification::new()
+                                                .title("Update Available")
+                                                .message(format!("One error occurred: {}", error))
+                                                .with_type(NotificationType::Error),
+                                            cx,
+                                        );
+                                    }
+                                };
                             }
                         }))
                         .active(cx.read_global::<DocumentState, _>({
-                            let document_id = document_id.clone();
                             move |state, _| {
                                 if let Some(current_document) = state.current_document.clone() {
                                     current_document.uid == document_id

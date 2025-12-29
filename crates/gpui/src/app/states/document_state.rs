@@ -3,11 +3,14 @@ use serde_json::Value;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-use crate::app::components::node_renderer::NodeRenderer;
+use crate::{
+    app::{components::node_renderer::NodeRenderer, states::repository_state::RepositoryState},
+    domain::database::document::DocumentModel,
+};
 
 #[derive(Clone)]
 pub struct Document {
-    pub uid: String,
+    pub uid: i32,
     pub title: String,
     pub nodes: Vec<Value>,
     pub renderer: Option<Entity<NodeRenderer>>,
@@ -40,7 +43,7 @@ impl DocumentState {
         })
     }
 
-    pub fn get_previous_document(&self, uid: String) -> Option<Document> {
+    pub fn get_previous_document(&self, uid: i32) -> Option<Document> {
         let current_index = self.documents.iter().position(|doc| doc.uid == uid);
         if let Some(index) = current_index {
             if index > 0 {
@@ -55,7 +58,7 @@ impl DocumentState {
 
     pub fn add_document(
         &mut self,
-        uid: String,
+        uid: i32,
         title: String,
         nodes: Vec<Value>,
         window: &mut Window,
@@ -75,7 +78,7 @@ impl DocumentState {
 
     pub fn add_document_and_focus(
         &mut self,
-        uid: String,
+        uid: i32,
         title: String,
         nodes: Vec<Value>,
         window: &mut Window,
@@ -89,7 +92,7 @@ impl DocumentState {
             .find(|element| element.uid == uid)
     }
 
-    pub fn add_persisted_document(&mut self, uid: String, title: String, nodes: Vec<Value>) {
+    pub fn add_persisted_document(&mut self, uid: i32, title: String, nodes: Vec<Value>) {
         let already_has_document = self.documents.iter().any(|element| element.uid == uid);
         if !already_has_document {
             self.documents.push(Document {
@@ -101,7 +104,7 @@ impl DocumentState {
         }
     }
 
-    pub fn ensure_renderer_for(&mut self, uid: &str, window: &mut Window, cx: &mut App) {
+    pub fn ensure_renderer_for(&mut self, uid: i32, window: &mut Window, cx: &mut App) {
         if let Some(doc) = self.documents.iter_mut().find(|d| d.uid == uid) {
             if doc.renderer.is_none() {
                 let renderer = NodeRenderer::new(doc.nodes.clone(), window, cx);
@@ -110,33 +113,64 @@ impl DocumentState {
         }
     }
 
-    pub fn remove_document(&mut self, uid: String) {
+    pub fn remove_document(&mut self, uid: i32) {
         self.documents.retain(|element| element.uid != uid);
     }
 
     pub fn mark_changed(&mut self, _: &mut Window, cx: &mut App) {
-        self.persistence = PersistenceState::Pending;
         let trigger_time = Instant::now();
+
+        self.persistence = PersistenceState::Pending;
         self.last_change = Some(trigger_time);
 
-        cx.spawn(async move |cx| {
-            sleep(Duration::from_secs(1)).await;
+        let documents = cx.global::<RepositoryState>().documents.clone();
+        let document = self.current_document.clone();
 
-            let _ = cx.update_global::<DocumentState, _>(move |state, _| {
-                if let Some(last) = state.last_change {
-                    if last <= trigger_time {
+        if let Some(document) = document {
+            let renderer = document.renderer;
+
+            cx.spawn(async move |cx| {
+                sleep(Duration::from_secs(1)).await;
+
+                let _ = cx.update_global::<DocumentState, _>(move |state, cx| {
+                    if let Some(last) = state.last_change {
+                        if last <= trigger_time {
+                            state.persistence = PersistenceState::Idle;
+                            state.pending_notification = true;
+
+                            if let Some(renderer) = renderer {
+                                let nodes = {
+                                    let nodes = renderer.read(cx).state.clone();
+                                    let nodes = nodes.read(cx).get_nodes().clone();
+                                    nodes
+                                        .iter()
+                                        .map(|node| node.element.get_data(cx))
+                                        .collect::<Vec<_>>()
+                                };
+
+                                let document_model = DocumentModel {
+                                    id: document.uid.clone(),
+                                    title: document.title.clone(),
+                                    content: Value::from_iter(nodes),
+                                };
+
+                                let _ = cx
+                                    .spawn(async move |_| {
+                                        let _ = documents.update_document(document_model).await;
+                                    })
+                                    .detach();
+                            }
+                        }
+                    } else {
                         state.persistence = PersistenceState::Idle;
                         state.pending_notification = true;
                     }
-                } else {
-                    state.persistence = PersistenceState::Idle;
-                    state.pending_notification = true;
-                }
-            });
+                });
 
-            Ok::<_, anyhow::Error>(())
-        })
-        .detach();
+                Ok::<_, anyhow::Error>(())
+            })
+            .detach();
+        }
     }
 }
 
