@@ -4,10 +4,11 @@ use anyhow::Error;
 use gpui::*;
 use gpui_component::{
     Root,
-    theme::{self, Theme, ThemeRegistry},
+    theme::{self, ThemeRegistry},
 };
 use remindr_gpui::{
     app::{
+        apply_theme,
         remindr::Remindr,
         screens::AppRouter,
         states::{document_state::DocumentState, repository_state::RepositoryState},
@@ -65,13 +66,6 @@ async fn main() -> Result<(), Error> {
         gpui_router::init(cx);
         theme::init(cx);
 
-        // Apply saved theme
-        let theme_name: SharedString = settings
-            .as_ref()
-            .map(|s| s.theme.name.clone())
-            .unwrap_or_else(|_| "Default Dark".to_string())
-            .into();
-
         // Load custom themes from the themes directory (~/.config/remindr/themes)
         let themes_dir = remindr
             .get_config_dir("remindr")
@@ -80,26 +74,13 @@ async fn main() -> Result<(), Error> {
 
         if let Some(themes_dir) = themes_dir {
             if themes_dir.exists() {
-                let theme_name_for_callback = theme_name.clone();
-                let _ = ThemeRegistry::watch_dir(themes_dir, cx, move |cx| {
-                    let theme_config = ThemeRegistry::global(cx)
-                        .themes()
-                        .get(&theme_name_for_callback)
-                        .cloned();
-                    if let Some(config) = theme_config {
-                        Theme::global_mut(cx).apply_config(&config);
-                        cx.refresh_windows();
-                    }
+                let _ = ThemeRegistry::watch_dir(themes_dir, cx, move |_cx| {
+                    // Themes will be applied when settings are set
                 });
             }
         }
 
-        // Try to apply theme immediately (for default themes)
-        let theme_config = ThemeRegistry::global(cx).themes().get(&theme_name).cloned();
-        if let Some(config) = theme_config {
-            Theme::global_mut(cx).apply_config(&config);
-        }
-
+        // Set settings as global (must be done before apply_theme)
         if let Ok(settings) = settings {
             cx.set_global(settings);
         }
@@ -143,9 +124,11 @@ async fn main() -> Result<(), Error> {
                 .expect("failed to open window");
 
             window
-                .update(cx, |_, window, _| {
+                .update(cx, |_, window, cx| {
                     window.activate_window();
                     window.set_window_title("Remindr");
+                    // Apply theme after window is created
+                    apply_theme(window, cx);
                 })
                 .expect("failed to update window");
 

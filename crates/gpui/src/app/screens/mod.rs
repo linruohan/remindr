@@ -2,7 +2,9 @@ use gpui::*;
 use gpui_component::{ActiveTheme, Root};
 
 use crate::app::{
-    components::sidebar::AppSidebar, screens::home_screen::HomeScreen, states::app_state::AppState,
+    components::{sidebar::AppSidebar, title_bar::TitleBar},
+    screens::home_screen::HomeScreen,
+    states::app_state::AppState,
 };
 
 pub mod document_screen;
@@ -12,6 +14,7 @@ pub mod login_screen;
 pub struct AppRouter {
     app_state: Entity<AppState>,
     sidebar: Entity<AppSidebar>,
+    title_bar: Entity<TitleBar>,
 }
 
 impl AppRouter {
@@ -26,6 +29,7 @@ impl AppRouter {
         Self {
             app_state: app_state.clone(),
             sidebar: AppSidebar::new(app_state, cx),
+            title_bar: cx.new(TitleBar::new),
         }
     }
 }
@@ -38,13 +42,20 @@ impl Render for AppRouter {
             .w_full()
             .h_full()
             .flex()
-            .child(div().bg(cx.theme().accent).child(self.sidebar.clone()))
+            .flex_col()
+            .child(self.title_bar.clone())
             .child(
-                if let Some(current_view) = self.app_state.read(cx).navigator.current() {
-                    current_view.clone()
-                } else {
-                    AnyView::from(cx.new(|_| EmptyView))
-                },
+                div()
+                    .flex_1()
+                    .flex()
+                    .child(div().bg(cx.theme().accent).child(self.sidebar.clone()))
+                    .child(
+                        if let Some(current_view) = self.app_state.read(cx).navigator.current() {
+                            current_view.clone()
+                        } else {
+                            AnyView::from(cx.new(|_| EmptyView))
+                        },
+                    ),
             )
             .children(notification_layer)
     }

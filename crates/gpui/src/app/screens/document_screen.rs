@@ -97,7 +97,7 @@ impl Render for DocumentScreen {
                                         let element_id = element.uid.clone();
                                         cx.listener(move |_, _, _, cx| {
                                             let element_id = element_id.clone();
-                                            cx.update_global::<DocumentState, _>(|state, cx| {
+                                            cx.update_global::<DocumentState, _>(|state, _| {
                                                 let previous_document =
                                                     state.get_previous_document(element_id.clone());
 

@@ -4,3 +4,4 @@ pub mod node_renderer;
 pub mod nodes;
 pub mod sidebar;
 pub mod slash_menu;
+pub mod title_bar;
