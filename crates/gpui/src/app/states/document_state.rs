@@ -9,6 +9,12 @@ use crate::{
 };
 
 #[derive(Clone)]
+pub struct PartialDocument {
+    pub uid: i32,
+    pub title: String,
+}
+
+#[derive(Clone)]
 pub struct Document {
     pub uid: i32,
     pub title: String,
@@ -23,8 +29,10 @@ pub enum PersistenceState {
 }
 
 pub struct DocumentState {
+    pub opened_document_ids: Vec<i32>,
     pub documents: Vec<Document>,
-    pub current_document: Option<Document>,
+
+    pub current_opened_document: Option<i32>,
 
     pub persistence: PersistenceState,
     pub last_change: Option<Instant>,
@@ -36,9 +44,9 @@ impl DocumentState {
         self.documents.iter().position(|doc| {
             doc.uid
                 == self
-                    .current_document
+                    .current_opened_document
                     .as_ref()
-                    .map(|doc| doc.uid.clone())
+                    .map(|doc| doc.clone())
                     .unwrap_or_default()
         })
     }
@@ -56,40 +64,32 @@ impl DocumentState {
         }
     }
 
-    pub fn add_document(
-        &mut self,
-        uid: i32,
-        title: String,
-        nodes: Vec<Value>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let already_has_document = self.documents.iter().any(|element| element.uid == uid);
-        if !already_has_document {
-            let renderer = NodeRenderer::new(nodes.clone(), window, cx);
-            self.documents.push(Document {
-                uid,
-                title,
-                nodes,
-                renderer: Some(cx.new(|_| renderer)),
-            });
+    pub fn add_document(&mut self, id: i32) {
+        if self.documents.iter().any(|doc| doc.uid == id) {
+            self.opened_document_ids.push(id);
+            return;
         }
+        // let already_has_document = self.documents.iter().any(|element| element.uid == uid);
+        // if !already_has_document {
+        //     let renderer = NodeRenderer::new(nodes.clone(), window, cx);
+        //     self.documents.push(Document {
+        //         uid,
+        //         title,
+        //         nodes,
+        //         renderer: Some(cx.new(|_| renderer)),
+        //     });
+        // }
     }
 
-    pub fn add_document_and_focus(
-        &mut self,
-        uid: i32,
-        title: String,
-        nodes: Vec<Value>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        self.add_document(uid.clone(), title.clone(), nodes, window, cx);
-        self.current_document = self
-            .documents
-            .clone()
-            .into_iter()
-            .find(|element| element.uid == uid)
+    pub fn add_document_and_focus(&mut self, id: i32) {
+        self.add_document(id);
+        self.current_opened_document = Some(id);
+
+        // self.current_document = self
+        //     .documents
+        //     .clone()
+        //     .into_iter()
+        //     .find(|element| element.uid == uid)
     }
 
     pub fn add_persisted_document(&mut self, uid: i32, title: String, nodes: Vec<Value>) {
@@ -124,7 +124,12 @@ impl DocumentState {
         self.last_change = Some(trigger_time);
 
         let documents = cx.global::<RepositoryState>().documents.clone();
-        let document = self.current_document.clone();
+
+        let document = self
+            .documents
+            .clone()
+            .into_iter()
+            .find(|document| Some(document.uid) == self.current_opened_document);
 
         if let Some(document) = document {
             let renderer = document.renderer;
@@ -156,7 +161,7 @@ impl DocumentState {
 
                                 let _ = cx
                                     .spawn(async move |_| {
-                                        let _ = documents.update_document(document_model).await;
+                                        documents.update_document(document_model).await
                                     })
                                     .detach();
                             }
@@ -178,7 +183,8 @@ impl Default for DocumentState {
     fn default() -> Self {
         Self {
             documents: Vec::new(),
-            current_document: None,
+            opened_document_ids: Vec::new(),
+            current_opened_document: None,
             persistence: PersistenceState::Idle,
             last_change: None,
             pending_notification: false,

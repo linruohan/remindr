@@ -2,7 +2,10 @@ use std::borrow::Cow;
 
 use anyhow::Error;
 use gpui::*;
-use gpui_component::{Root, theme};
+use gpui_component::{
+    Root,
+    theme::{self, Theme, ThemeRegistry},
+};
 use remindr_gpui::{
     app::{
         remindr::Remindr,
@@ -62,6 +65,41 @@ async fn main() -> Result<(), Error> {
         gpui_router::init(cx);
         theme::init(cx);
 
+        // Apply saved theme
+        let theme_name: SharedString = settings
+            .as_ref()
+            .map(|s| s.theme.name.clone())
+            .unwrap_or_else(|_| "Default Dark".to_string())
+            .into();
+
+        // Load custom themes from the themes directory (~/.config/remindr/themes)
+        let themes_dir = remindr
+            .get_config_dir("remindr")
+            .map(|p| p.join("themes"))
+            .ok();
+
+        if let Some(themes_dir) = themes_dir {
+            if themes_dir.exists() {
+                let theme_name_for_callback = theme_name.clone();
+                let _ = ThemeRegistry::watch_dir(themes_dir, cx, move |cx| {
+                    let theme_config = ThemeRegistry::global(cx)
+                        .themes()
+                        .get(&theme_name_for_callback)
+                        .cloned();
+                    if let Some(config) = theme_config {
+                        Theme::global_mut(cx).apply_config(&config);
+                        cx.refresh_windows();
+                    }
+                });
+            }
+        }
+
+        // Try to apply theme immediately (for default themes)
+        let theme_config = ThemeRegistry::global(cx).themes().get(&theme_name).cloned();
+        if let Some(config) = theme_config {
+            Theme::global_mut(cx).apply_config(&config);
+        }
+
         if let Ok(settings) = settings {
             cx.set_global(settings);
         }
@@ -89,6 +127,11 @@ async fn main() -> Result<(), Error> {
                     height: px(480.),
                 }),
                 kind: WindowKind::Normal,
+                titlebar: Some(TitlebarOptions {
+                    appears_transparent: true,
+                    title: Some("Remindr".into()),
+                    traffic_light_position: Some(point(px(9.0), px(9.0))),
+                }),
                 ..Default::default()
             };
 

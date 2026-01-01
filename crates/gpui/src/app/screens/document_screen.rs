@@ -42,8 +42,13 @@ impl Render for DocumentScreen {
         let (documents, current_document, current_index, pending_notification) = cx
             .read_global::<DocumentState, _>(|state, _| {
                 let documents = state.documents.clone().into_iter().collect::<Vec<_>>();
-                let current_document = state.current_document.clone();
-                let current_index = state.get_current_document_index();
+                let current_document = state
+                    .documents
+                    .clone()
+                    .into_iter()
+                    .find(|document| Some(document.uid) == state.current_opened_document);
+
+                let current_index = state.current_opened_document.clone();
                 let pending_notification = state.pending_notification;
 
                 (
@@ -74,14 +79,11 @@ impl Render for DocumentScreen {
             .when(!documents.is_empty(), |this| {
                 this.child(
                     TabBar::new("tabs")
-                        .selected_index(current_index.unwrap_or(0))
+                        .selected_index(current_index.map(|index| index as usize).unwrap_or(0))
                         .on_click(cx.listener(|_, index: &usize, _, cx| {
                             cx.update_global::<DocumentState, _>(|state, _| {
-                                let docs = state.documents.clone().into_iter().collect::<Vec<_>>();
-                                state.current_document = docs.get(*index).cloned();
+                                state.current_opened_document = Some(*index as i32);
                             });
-
-                            cx.notify();
                         }))
                         .children(documents.iter().map(|element| {
                             Tab::new().label(element.title.clone()).suffix(
@@ -99,10 +101,10 @@ impl Render for DocumentScreen {
                                                 let previous_document =
                                                     state.get_previous_document(element_id.clone());
 
-                                                state.current_document = previous_document;
-                                                state.remove_document(element_id);
+                                                state.current_opened_document =
+                                                    previous_document.map(|document| document.uid);
 
-                                                cx.notify();
+                                                state.remove_document(element_id);
                                             })
                                         })
                                     }),

@@ -16,3 +16,10 @@ impl Utils {
         Uuid::new_v7(timestamp)
     }
 }
+
+#[derive(Clone)]
+pub enum LoadingState<T> {
+    Loading,
+    Loaded(T),
+    Error(String),
+}
