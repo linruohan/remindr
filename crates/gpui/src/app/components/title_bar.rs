@@ -50,8 +50,16 @@ impl Render for TitleBar {
             .border_color(cx.theme().border)
             .flex()
             .items_center()
-            .justify_end()
+            .justify_between()
             .px_3()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .ml(rems(4.5))
+                    .child("Remindr")
+                    .text_sm(),
+            )
             .child(
                 Button::new("theme-toggle")
                     .icon(icon)

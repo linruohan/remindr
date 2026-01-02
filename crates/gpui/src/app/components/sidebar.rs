@@ -2,9 +2,13 @@ use std::time::Duration;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Sizable, WindowExt,
+    ActiveTheme, Icon, IconName, Sizable, WindowExt,
+    avatar::Avatar,
     button::{Button, ButtonVariants},
-    h_flex, v_flex,
+    h_flex,
+    menu::{DropdownMenu, PopupMenuItem},
+    sidebar::SidebarHeader,
+    v_flex,
 };
 
 use crate::{
@@ -69,6 +73,53 @@ impl AppSidebar {
             }
         })
     }
+
+    fn get_username() -> String {
+        std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| "User".to_string())
+    }
+
+    fn render_user_dropdown(&self, cx: &Context<Self>) -> impl IntoElement {
+        let username = Self::get_username();
+        let sidebar_fg = cx.theme().sidebar_foreground;
+
+        SidebarHeader::new()
+            .p_1()
+            .child(Avatar::new().name(username.clone()).small())
+            .child(
+                div()
+                    .flex_1()
+                    .text_sm()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .child(username),
+            )
+            .child(
+                h_flex()
+                    .gap_0p5()
+                    .child(
+                        Icon::default()
+                            .path("icons/square-pen.svg")
+                            .size_4()
+                            .text_color(sidebar_fg.opacity(0.6)),
+                    )
+                    .child(
+                        Icon::new(IconName::ChevronDown)
+                            .size_4()
+                            .text_color(sidebar_fg.opacity(0.6)),
+                    ),
+            )
+        // .dropdown_menu(|menu, _, _| {
+        //     menu.item(
+        //         PopupMenuItem::new("Settings")
+        //             .icon(Icon::new(IconName::Settings))
+        //             .on_click(|_, _, _| {
+        //                 // TODO: Open settings
+        //             }),
+        //     )
+        // })
+    }
 }
 
 impl Render for AppSidebar {
@@ -132,7 +183,7 @@ impl Render for AppSidebar {
                     )
                     .child(
                         Button::new("create-document")
-                            .icon(Icon::default().path("icons/plus.svg"))
+                            .icon(Icon::new(IconName::Plus))
                             .ghost()
                             .xsmall()
                             .cursor_pointer()
@@ -217,7 +268,12 @@ impl Render for AppSidebar {
                             });
                         }
                     })
-                    .child(Icon::default().path("icons/file-text.svg").size_4().text_color(icon_color))
+                    .child(
+                        Icon::default()
+                            .path("icons/file-text.svg")
+                            .size_4()
+                            .text_color(icon_color),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -301,6 +357,7 @@ impl Render for AppSidebar {
             .bg(sidebar_bg)
             .border_r_1()
             .border_color(border_color)
+            .child(div().px_2().py_2().child(self.render_user_dropdown(cx)))
             .child(header)
             .child(div().flex().flex_col().w_full().px_1().children(items))
     }
