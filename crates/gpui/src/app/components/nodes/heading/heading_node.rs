@@ -199,15 +199,23 @@ impl HeadingNode {
 
 impl Render for HeadingNode {
     fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let input = Input::new(&self.input_state)
+            .bordered(false)
+            .bg(transparent_white());
+
+        let sized_input = match self.data.metadata.level {
+            1 => input.text_3xl(),
+            2 => input.text_2xl(),
+            3 => input.text_xl(),
+            4 => input.text_lg(),
+            5 => input.text_base(),
+            _ => input.text_sm(),
+        };
+
         div()
             .min_w(px(820.0))
             .w_full()
-            .child(
-                Input::new(&self.input_state)
-                    .bordered(false)
-                    .text_3xl()
-                    .bg(transparent_white()),
-            )
+            .child(sized_input)
             .child(self.menu.clone())
     }
 }

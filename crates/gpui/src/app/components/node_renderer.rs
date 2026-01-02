@@ -4,15 +4,19 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::app::{
-    components::nodes::{
-        element::{NodePayload, RemindrElement},
-        text::data::TextMetadata,
+    components::{
+        nodes::{
+            element::{NodePayload, RemindrElement},
+            text::data::TextMetadata,
+        },
+        slash_menu::{SlashMenu, SlashMenuMode},
     },
     states::node_state::{MovingElement, NodeState},
 };
 
 pub struct NodeRenderer {
     pub state: Entity<NodeState>,
+    insert_menu: Entity<SlashMenu>,
 }
 
 #[derive(Clone)]
@@ -31,7 +35,18 @@ impl NodeRenderer {
             }
         });
 
-        Self { state }
+        let insert_menu = cx.new(|cx| {
+            SlashMenu::new(Uuid::nil(), &state, window, cx).with_mode(SlashMenuMode::InsertAfter)
+        });
+
+        Self { state, insert_menu }
+    }
+
+    fn open_insert_menu(&mut self, node_id: Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        self.insert_menu.update(cx, |menu, cx| {
+            menu.set_related_id(node_id);
+            menu.set_open(true, window, cx);
+        });
     }
 
     fn on_drop(this: &mut Self, node_id: Uuid, direction: MovingElement, cx: &mut Context<Self>) {
@@ -100,7 +115,6 @@ impl NodeRenderer {
 
 impl Render for NodeRenderer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let background_color = cx.theme().background;
         let nodes = {
             let state = self.state.read(cx);
             state.get_nodes().clone()
@@ -134,11 +148,15 @@ impl Render for NodeRenderer {
                         .left_0()
                         .flex()
                         .gap_1()
-                        .child(
+                        .child({
+                            let menu_related_id = self.insert_menu.read(cx).related_id();
+                            let show_menu_here = menu_related_id == node.id;
+
                             div()
-                                .id(node.id)
+                                .id(SharedString::from(format!("plus-btn-{}", node.id)))
                                 .size_6()
                                 .hover(|this| this.bg(cx.theme().background.opacity(0.3)))
+                                .cursor_pointer()
                                 .flex()
                                 .justify_center()
                                 .items_center()
@@ -146,8 +164,15 @@ impl Render for NodeRenderer {
                                     Icon::new(IconName::Plus)
                                         .size_5()
                                         .text_color(cx.theme().accent_foreground.opacity(0.5)),
-                                ),
-                        )
+                                )
+                                .on_click(cx.listener({
+                                    let node_id = node.id;
+                                    move |this, _, window, cx| {
+                                        this.open_insert_menu(node_id, window, cx);
+                                    }
+                                }))
+                                .when(show_menu_here, |el| el.child(self.insert_menu.clone()))
+                        })
                         .child(
                             div()
                                 .id(node.id)
@@ -237,18 +262,14 @@ impl Render for NodeRenderer {
                 })
         });
 
-        div()
-            .size_full()
-            .bg(background_color)
-            .children(children)
-            .child(
-                div()
-                    .id("add_element")
-                    .cursor_pointer()
-                    .ml_12()
-                    .h_20()
-                    .w_full()
-                    .on_click(cx.listener(Self::on_create_text_zone)),
-            )
+        div().size_full().children(children).child(
+            div()
+                .id("add_element")
+                .cursor_pointer()
+                .ml_12()
+                .h_20()
+                .w_full()
+                .on_click(cx.listener(Self::on_create_text_zone)),
+        )
     }
 }

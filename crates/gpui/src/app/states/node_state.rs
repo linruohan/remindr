@@ -164,6 +164,12 @@ impl NodeState {
         self.elements.insert(index, node.clone());
     }
 
+    pub fn replace_node(&mut self, id: Uuid, node: &RemindrNode) {
+        if let Some(index) = self.elements.iter().position(|n| n.id == id) {
+            self.elements[index] = node.clone();
+        }
+    }
+
     pub fn get_previous_node(&self, id: Uuid) -> Option<RemindrNode> {
         let index = self.elements.iter().position(|node| node.id == id)?;
         if index == 0 {

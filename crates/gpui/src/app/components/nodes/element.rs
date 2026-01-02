@@ -47,8 +47,16 @@ impl RemindrElement {
         window: &mut Window,
         cx: &mut App,
     ) -> RemindrNode {
-        let id = Utils::generate_uuid();
+        Self::create_node_with_id(Utils::generate_uuid(), payload, state, window, cx)
+    }
 
+    pub fn create_node_with_id(
+        id: uuid::Uuid,
+        payload: NodePayload,
+        state: &Entity<NodeState>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> RemindrNode {
         let node = match payload {
             NodePayload::Heading((payload, is_focus)) => {
                 let data =

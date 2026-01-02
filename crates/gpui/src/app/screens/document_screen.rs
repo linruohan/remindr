@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    Disableable, Icon, Sizable,
+    ActiveTheme, Colorize, Disableable, Icon, Sizable,
     button::{Button, ButtonVariants},
     input::Input,
     scroll::ScrollableElement,
@@ -230,6 +230,7 @@ impl Render for DocumentScreen {
                         }))
                         .children(documents.iter().map(|element| {
                             Tab::new()
+                                .bg(cx.theme().background.lighten(0.2))
                                 .cursor_pointer()
                                 .label(element.title.clone())
                                 .suffix(
@@ -289,8 +290,9 @@ impl DocumentScreen {
 #[derive(IntoElement)]
 struct DocumentLoading;
 impl RenderOnce for DocumentLoading {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
+            .bg(cx.theme().background.lighten(0.2))
             .flex()
             .w_full()
             .h_full()
@@ -306,8 +308,9 @@ struct DocumentLoadingError {
 }
 
 impl RenderOnce for DocumentLoadingError {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
+            .bg(cx.theme().background.lighten(0.2))
             .flex()
             .w_full()
             .h_full()
@@ -325,47 +328,54 @@ struct DocumentStateLoaded {
 
 impl RenderOnce for DocumentStateLoaded {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        div().flex().flex_col().h_full().w_full().child(
-            div()
-                .flex()
-                .gap_10()
-                .flex_1()
-                .overflow_y_scrollbar()
-                .child(
-                    div()
-                        .max_w(px(820.0))
-                        .w_full()
-                        .mx_auto()
-                        .py_5()
-                        .child(
-                            Input::new(&self.content.title_input)
-                                .appearance(false)
-                                .text_3xl()
-                                .ml_10()
-                                .large(),
-                        )
-                        .child(self.content.renderer.clone()),
-                )
-                .when(self.show_code, |this| {
-                    let nodes = self
-                        .content
-                        .renderer
-                        .read(cx)
-                        .state
-                        .read(cx)
-                        .get_nodes()
-                        .clone();
-                    this.child(NodeCodeRenderer::new(nodes, window, cx))
-                }),
-        )
+        div()
+            .bg(cx.theme().background.lighten(0.2))
+            .flex()
+            .flex_col()
+            .h_full()
+            .w_full()
+            .child(
+                div()
+                    .flex()
+                    .gap_10()
+                    .flex_1()
+                    .overflow_y_scrollbar()
+                    .child(
+                        div()
+                            .max_w(px(820.0))
+                            .w_full()
+                            .mx_auto()
+                            .py_5()
+                            .child(
+                                Input::new(&self.content.title_input)
+                                    .appearance(false)
+                                    .text_3xl()
+                                    .ml_10()
+                                    .large(),
+                            )
+                            .child(self.content.renderer.clone()),
+                    )
+                    .when(self.show_code, |this| {
+                        let nodes = self
+                            .content
+                            .renderer
+                            .read(cx)
+                            .state
+                            .read(cx)
+                            .get_nodes()
+                            .clone();
+                        this.child(NodeCodeRenderer::new(nodes, window, cx))
+                    }),
+            )
     }
 }
 
 #[derive(IntoElement)]
 struct DocumentStateEmpty;
 impl RenderOnce for DocumentStateEmpty {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
+            .bg(cx.theme().background.lighten(0.2))
             .flex()
             .w_full()
             .h_full()

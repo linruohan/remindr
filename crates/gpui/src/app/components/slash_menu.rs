@@ -1,7 +1,7 @@
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Icon, Selectable, Sizable,
-    input::{Input, InputEvent, InputState, MoveDown, MoveUp},
+    input::{Backspace, Escape, Input, InputEvent, InputState, MoveDown, MoveUp, Position},
     label::Label,
     popover::Popover,
 };
@@ -36,7 +36,14 @@ enum MenuAction {
     InsertDivider,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
+pub enum SlashMenuMode {
+    /// Replace the current node with the selected item
+    Replace,
+    /// Insert the selected item after the related node
+    InsertAfter,
+}
+
 pub struct SlashMenu {
     related_id: Uuid,
     pub state: Entity<NodeState>,
@@ -45,6 +52,7 @@ pub struct SlashMenu {
     pub focus_handle: FocusHandle,
     search_input: Entity<InputState>,
     items: Vec<MenuItem>,
+    mode: SlashMenuMode,
 }
 
 impl SlashMenu {
@@ -103,7 +111,25 @@ impl SlashMenu {
             focus_handle: cx.focus_handle(),
             search_input,
             items,
+            mode: SlashMenuMode::Replace,
         }
+    }
+
+    pub fn with_mode(mut self, mode: SlashMenuMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub fn set_related_id(&mut self, id: Uuid) {
+        self.related_id = id;
+    }
+
+    pub fn related_id(&self) -> Uuid {
+        self.related_id
+    }
+
+    pub fn set_mode(&mut self, mode: SlashMenuMode) {
+        self.mode = mode;
     }
 
     pub fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -261,12 +287,15 @@ impl SlashMenu {
 
     fn render_search_input(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div().w_full().py_0p5().child(
-            Input::new(&self.search_input).appearance(false).prefix(
-                Icon::default()
-                    .path("icons/search.svg")
-                    .small()
-                    .text_color(cx.theme().muted_foreground),
-            ),
+            Input::new(&self.search_input)
+                .text_sm()
+                .appearance(false)
+                .prefix(
+                    Icon::default()
+                        .path("icons/search.svg")
+                        .small()
+                        .text_color(cx.theme().muted_foreground),
+                ),
         )
     }
 
@@ -275,7 +304,24 @@ impl SlashMenu {
         filtered_items: &[(usize, MenuItem)],
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let mut content = div().flex().flex_col();
+        let should_close_on_backspace =
+            self.mode == SlashMenuMode::Replace && self.search_input.read(cx).value().is_empty();
+
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .when(should_close_on_backspace, |el| {
+                el.capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key.as_str() == "backspace" {
+                        this.open = false;
+                        cx.emit(SlashMenuDismissEvent {
+                            restore_focus: true,
+                        });
+                        cx.notify();
+                        cx.stop_propagation();
+                    }
+                }))
+            });
 
         content = content.child(self.render_search_input(cx));
         content = content.child(self.render_section_label("Basic blocks", cx));
@@ -354,7 +400,10 @@ impl SlashMenu {
     }
 
     fn insert_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.remove_slash(window, cx);
+        if self.mode == SlashMenuMode::Replace {
+            self.remove_slash(window, cx);
+        }
+
         self.state.update(cx, |state, cx| {
             state.insert_node_after(
                 self.related_id,
@@ -369,30 +418,69 @@ impl SlashMenu {
 
         self.open = false;
         cx.emit(SlashMenuDismissEvent {
-            restore_focus: false,
+            restore_focus: self.mode == SlashMenuMode::InsertAfter,
         });
         cx.notify();
     }
 
     fn insert_heading(&mut self, level: u32, window: &mut Window, cx: &mut Context<Self>) {
-        self.remove_slash(window, cx);
-        self.state.update(cx, |state, cx| {
-            state.insert_node_after(
-                self.related_id,
-                &RemindrElement::create_node(
+        let current_id = self.related_id;
+
+        if self.mode == SlashMenuMode::InsertAfter {
+            // Insert new heading after current node
+            self.state.update(cx, |state, cx| {
+                let node = RemindrElement::create_node(
                     NodePayload::Heading((
                         HeadingMetadata {
                             level,
-                            ..Default::default()
+                            content: SharedString::default(),
                         },
                         true,
                     )),
                     &self.state,
                     window,
                     cx,
-                ),
-            );
-        });
+                );
+                state.insert_node_after(current_id, &node);
+            });
+        } else {
+            // Replace mode: get current content and cursor position before replacing
+            let current_content = self.get_current_content(cx);
+            let content_without_slash = self.remove_slash_command(current_content.clone());
+            let cursor_position = self.get_current_cursor_position(cx);
+
+            // Calculate new cursor position (subtract 1 for the removed slash)
+            let new_cursor_char = cursor_position.character.saturating_sub(1);
+            let new_position = Position::new(cursor_position.line, new_cursor_char);
+
+            // Replace current block with heading using the same ID
+            self.state.update(cx, |state, cx| {
+                let node = RemindrElement::create_node_with_id(
+                    current_id,
+                    NodePayload::Heading((
+                        HeadingMetadata {
+                            level,
+                            content: content_without_slash,
+                        },
+                        true,
+                    )),
+                    &self.state,
+                    window,
+                    cx,
+                );
+
+                // Restore cursor position on the new heading
+                if let RemindrElement::Heading(heading) = &node.element {
+                    heading.update(cx, |heading, cx| {
+                        heading.input_state.update(cx, |input, cx| {
+                            input.set_cursor_position(new_position, window, cx);
+                        });
+                    });
+                }
+
+                state.replace_node(current_id, &node);
+            });
+        }
 
         self.open = false;
         cx.emit(SlashMenuDismissEvent {
@@ -401,8 +489,40 @@ impl SlashMenu {
         cx.notify();
     }
 
+    fn get_current_content(&self, cx: &App) -> SharedString {
+        let current_node = self.state.read(cx).get_current_nodes(self.related_id);
+        if let Some(node) = current_node {
+            match &node.element {
+                RemindrElement::Text(element) => element.read(cx).input_state.read(cx).value(),
+                RemindrElement::Heading(element) => element.read(cx).input_state.read(cx).value(),
+                _ => SharedString::default(),
+            }
+        } else {
+            SharedString::default()
+        }
+    }
+
+    fn get_current_cursor_position(&self, cx: &App) -> Position {
+        let current_node = self.state.read(cx).get_current_nodes(self.related_id);
+        if let Some(node) = current_node {
+            match &node.element {
+                RemindrElement::Text(element) => {
+                    element.read(cx).input_state.read(cx).cursor_position()
+                }
+                RemindrElement::Heading(element) => {
+                    element.read(cx).input_state.read(cx).cursor_position()
+                }
+                _ => Position::default(),
+            }
+        } else {
+            Position::default()
+        }
+    }
+
     fn insert_divider(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.remove_slash(window, cx);
+        if self.mode == SlashMenuMode::Replace {
+            self.remove_slash(window, cx);
+        }
 
         let current_slash_menu_id = self.related_id;
 
@@ -456,6 +576,24 @@ impl Render for SlashMenu {
             .on_action(cx.listener(|this, _: &MoveDown, _, cx| {
                 this.move_selection_down(cx);
             }))
+            .on_action(cx.listener(|this, _: &Escape, _, cx| {
+                this.open = false;
+                cx.emit(SlashMenuDismissEvent {
+                    restore_focus: true,
+                });
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &Backspace, _, cx| {
+                if this.mode == SlashMenuMode::Replace
+                    && this.search_input.read(cx).value().is_empty()
+                {
+                    this.open = false;
+                    cx.emit(SlashMenuDismissEvent {
+                        restore_focus: true,
+                    });
+                    cx.notify();
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
                     "enter" => {
@@ -481,6 +619,7 @@ impl Render for SlashMenu {
                     .on_open_change(cx.listener(|this, open: &bool, window, cx| {
                         this.set_open(*open, window, cx);
                     }))
+                    .when(self.mode == SlashMenuMode::InsertAfter, |el| el.mt_5())
                     .p_1()
                     .w(px(280.0))
                     .bg(cx.theme().background)
