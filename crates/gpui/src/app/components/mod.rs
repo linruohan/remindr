@@ -1,5 +1,5 @@
+pub mod code_window;
 pub mod confirm_dialog;
-pub mod node_code_renderer;
 pub mod node_config_menu;
 pub mod node_renderer;
 pub mod nodes;

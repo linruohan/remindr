@@ -13,7 +13,7 @@ use gpui_nav::{Screen, ScreenContext};
 use crate::{
     LoadingState,
     app::{
-        components::node_code_renderer::NodeCodeRenderer,
+        components::code_window::CodeWindow,
         states::{
             app_state::AppState,
             document_state::{DocumentContent, DocumentState, OpenedDocument, PersistenceState},
@@ -24,7 +24,6 @@ use crate::{
 
 pub struct DocumentScreen {
     _ctx: ScreenContext<AppState>,
-    show_code: bool,
     initialized: bool,
 }
 
@@ -38,7 +37,6 @@ impl DocumentScreen {
     pub fn new(app_state: WeakEntity<AppState>) -> Self {
         Self {
             _ctx: ScreenContext::new(app_state),
-            show_code: false,
             initialized: false,
         }
     }
@@ -52,11 +50,6 @@ impl DocumentScreen {
             })
             .detach();
         }
-    }
-
-    fn toggle_code_mode(this: &mut Self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        this.show_code = !this.show_code;
-        cx.notify();
     }
 
     fn load_document_if_needed(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -232,8 +225,29 @@ impl Render for DocumentScreen {
                                     .ghost()
                                     .cursor_pointer()
                                     .icon(Icon::default().path("icons/braces.svg"))
-                                    .tooltip("Toggle code view")
-                                    .on_click(cx.listener(Self::toggle_code_mode)),
+                                    .tooltip("Open code view")
+                                    .on_click({
+                                        let current_doc = current_document.clone();
+                                        cx.listener(move |_, _, _, cx| {
+                                            if let Some(doc) = &current_doc {
+                                                if let LoadingState::Loaded(content) = &doc.state {
+                                                    let nodes = content
+                                                        .renderer
+                                                        .read(cx)
+                                                        .state
+                                                        .read(cx)
+                                                        .get_nodes()
+                                                        .clone();
+                                                    CodeWindow::open(
+                                                        doc.title.clone(),
+                                                        doc.uid,
+                                                        nodes,
+                                                        cx,
+                                                    );
+                                                }
+                                            }
+                                        })
+                                    }),
                             ),
                         )
                         .selected_index(current_index.unwrap_or(0))
@@ -290,7 +304,6 @@ impl DocumentScreen {
                 LoadingState::Loading => DocumentLoading.into_any_element(),
                 LoadingState::Loaded(content) => DocumentStateLoaded {
                     content: content.clone(),
-                    show_code: self.show_code,
                 }
                 .into_any_element(),
                 LoadingState::Error(error) => DocumentLoadingError {
@@ -339,11 +352,10 @@ impl RenderOnce for DocumentLoadingError {
 #[derive(IntoElement)]
 struct DocumentStateLoaded {
     content: DocumentContent,
-    show_code: bool,
 }
 
 impl RenderOnce for DocumentStateLoaded {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
             .bg(cx.theme().background.lighten(0.2))
             .flex()
@@ -372,18 +384,7 @@ impl RenderOnce for DocumentStateLoaded {
                                     .large(),
                             )
                             .child(self.content.renderer.clone()),
-                    )
-                    .when(self.show_code, |this| {
-                        let nodes = self
-                            .content
-                            .renderer
-                            .read(cx)
-                            .state
-                            .read(cx)
-                            .get_nodes()
-                            .clone();
-                        this.child(NodeCodeRenderer::new(nodes, window, cx))
-                    }),
+                    ),
             )
     }
 }
