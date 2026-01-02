@@ -3,10 +3,8 @@ use std::rc::Rc;
 
 use crate::app::states::node_state::NodeState;
 
-/// Callback type for menu item actions.
 pub type MenuActionCallback = Rc<dyn Fn(&Entity<NodeState>, &mut Window, &mut App)>;
 
-/// Represents a menu item that can be displayed in the node configuration menu.
 #[derive(Clone)]
 pub struct NodeMenuItem {
     pub id: SharedString,
@@ -31,8 +29,6 @@ impl NodeMenuItem {
     }
 }
 
-/// Trait that each node type implements to provide its specific menu items.
 pub trait NodeMenuProvider {
-    /// Returns the menu items specific to this node type.
     fn menu_items(&self, cx: &App) -> Vec<NodeMenuItem>;
 }

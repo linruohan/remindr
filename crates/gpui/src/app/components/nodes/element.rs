@@ -13,6 +13,7 @@ use crate::{
                 data::{TextMetadata, TextNodeData},
                 text_node::TextNode,
             },
+            textual_node::TextualNode,
         },
         states::node_state::NodeState,
     },
