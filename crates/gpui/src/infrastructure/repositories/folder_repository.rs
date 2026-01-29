@@ -100,6 +100,32 @@ impl FolderRepository {
         Ok(())
     }
 
+    /// Delete a folder but keep its children by moving them to the folder's parent.
+    /// Sub-folders and documents are reparented to parent_id of the deleted folder.
+    pub async fn delete_folder_keep_children(&self, id: i32) -> Result<(), Error> {
+        let folder = self.get_folder_by_id(id).await?;
+        let new_parent = folder.parent_id;
+
+        // Move child folders to the deleted folder's parent
+        query("UPDATE folders SET parent_id = ? WHERE parent_id = ?")
+            .bind(new_parent)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::Error::from(e))?;
+
+        // Move child documents to the deleted folder's parent
+        query("UPDATE documents SET folder_id = ? WHERE folder_id = ?")
+            .bind(new_parent)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::Error::from(e))?;
+
+        // Now delete the empty folder
+        self.delete_folder(id).await
+    }
+
     /// Compute the depth of a folder by walking up the parent chain.
     /// Root folders have depth 1, their children depth 2, etc.
     async fn compute_depth(&self, folder_id: i32) -> Result<u32, Error> {

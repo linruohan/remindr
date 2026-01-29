@@ -8,7 +8,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
-    menu::{DropdownMenu as _, PopupMenuItem},
+    menu::{ContextMenu, ContextMenuExt as _, DropdownMenu as _, PopupMenuItem},
     scroll::ScrollableElement,
     sidebar::SidebarHeader,
     v_flex,
@@ -218,7 +218,7 @@ impl AppSidebar {
                     this.commit_rename(cx);
                 }
                 InputEvent::Blur => {
-                    this.commit_rename(cx);
+                    this.cancel_rename(cx);
                 }
                 _ => {}
             }
@@ -283,6 +283,11 @@ impl AppSidebar {
                 .detach();
             }
         }
+    }
+
+    fn cancel_rename(&mut self, _cx: &mut Context<Self>) {
+        self.editing_item = None;
+        self.rename_input = None;
     }
 
     /// Build a tree structure from flat lists of folders and documents
@@ -488,11 +493,21 @@ impl Render for AppSidebar {
         // Root drop zone: drop a document here to move it to root
         let root_drop_zone = {
             let this = this.clone();
+            let this_ctx = this.clone();
+            let this_cancel = this.clone();
+            let app_state_ctx = app_state.clone();
             div()
                 .id("root-drop-zone")
                 .w_full()
                 .min_h_8()
                 .flex_1()
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    this_cancel.update(cx, |state, cx| {
+                        if state.editing_item.is_some() {
+                            state.cancel_rename(cx);
+                        }
+                    });
+                })
                 .on_drop(move |dragged: &DraggableDocument, _, cx| {
                     let doc_id = dragged.id;
                     let doc_repo = cx.global::<RepositoryState>().documents.clone();
@@ -510,6 +525,74 @@ impl Render for AppSidebar {
                         Ok::<_, anyhow::Error>(())
                     })
                     .detach();
+                })
+                .context_menu({
+                    move |menu, _window, _cx| {
+                        menu.item(
+                            PopupMenuItem::new("New document")
+                                .icon(Icon::default().path("icons/file-text.svg"))
+                                .on_click({
+                                    let this = this_ctx.clone();
+                                    let app_state = app_state_ctx.clone();
+                                    move |_, _, cx| {
+                                        let repository =
+                                            cx.global::<RepositoryState>().documents.clone();
+                                        let this_clone = this.clone();
+                                        let app_state = app_state.clone();
+
+                                        cx.spawn(async move |cx| {
+                                            let new_document = DocumentModel {
+                                                id: 0,
+                                                title: "Untitled".to_string(),
+                                                content: serde_json::json!([]),
+                                                folder_id: None,
+                                            };
+                                            let new_id =
+                                                repository.insert_document(new_document).await?;
+                                            let _ = cx.update(|cx: &mut App| {
+                                                AppSidebar::refresh_data(&this_clone, cx);
+                                                cx.update_global::<DocumentState, _>(|state, _| {
+                                                    state.open_document(
+                                                        new_id,
+                                                        "Untitled".to_string(),
+                                                    );
+                                                });
+                                                app_state.update(cx, |app_state, cx| {
+                                                    let document_screen =
+                                                        DocumentScreen::new(cx.weak_entity());
+                                                    app_state.navigator.push(document_screen, cx);
+                                                });
+                                            });
+                                            Ok::<_, anyhow::Error>(())
+                                        })
+                                        .detach();
+                                    }
+                                }),
+                        )
+                        .item(
+                            PopupMenuItem::new("New folder")
+                                .icon(Icon::new(IconName::Folder))
+                                .on_click({
+                                    let this = this_ctx.clone();
+                                    move |_, _, cx| {
+                                        let folder_repo =
+                                            cx.global::<RepositoryState>().folders.clone();
+                                        let this_clone = this.clone();
+
+                                        cx.spawn(async move |cx| {
+                                            folder_repo
+                                                .insert_folder("Untitled".to_string(), None)
+                                                .await?;
+                                            let _ = cx.update(|cx| {
+                                                AppSidebar::refresh_data(&this_clone, cx);
+                                            });
+                                            Ok::<_, anyhow::Error>(())
+                                        })
+                                        .detach();
+                                    }
+                                }),
+                        )
+                    }
                 })
         };
 
@@ -549,7 +632,7 @@ fn render_tree_items(
     item_text_color: Hsla,
     icon_color: Hsla,
     accent_bg: Hsla,
-) -> Vec<Stateful<Div>> {
+) -> Vec<ContextMenu<Stateful<Div>>> {
     let mut elements = Vec::new();
 
     for item in items {
@@ -640,12 +723,22 @@ fn render_tree_items(
                     .child({
                         let is_editing = editing_item == Some(EditingItem::Folder(folder_id));
                         if is_editing {
-                            div().flex_1().mx_neg_1().child(
-                                Input::new(rename_input.as_ref().unwrap())
-                                    .xsmall()
-                                    .appearance(false)
-                                    .text_sm(),
-                            )
+                            let this_esc = this.clone();
+                            div().flex_1().mx_neg_1()
+                                .on_key_down(move |event, _, cx| {
+                                    if event.keystroke.key.as_str() == "escape" {
+                                        cx.stop_propagation();
+                                        this_esc.update(cx, |state, cx| {
+                                            state.cancel_rename(cx);
+                                        });
+                                    }
+                                })
+                                .child(
+                                    Input::new(rename_input.as_ref().unwrap())
+                                        .xsmall()
+                                        .appearance(false)
+                                        .text_sm(),
+                                )
                         } else {
                             let this = this.clone();
                             let name = folder_name.clone();
@@ -781,7 +874,152 @@ fn render_tree_items(
                                             })
                                     }),
                             ),
-                    );
+                    )
+                    .context_menu({
+                        let this = this.clone();
+                        let app_state = app_state.clone();
+                        let folder_name = model.name.clone();
+                        let _folder_parent_id = model.parent_id;
+                        move |menu, _window, _cx| {
+                            menu.item(
+                                PopupMenuItem::new("New document")
+                                    .icon(Icon::default().path("icons/file-text.svg"))
+                                    .on_click({
+                                        let this = this.clone();
+                                        let app_state = app_state.clone();
+                                        move |_, _, cx| {
+                                            let repository = cx.global::<RepositoryState>().documents.clone();
+                                            let this_clone = this.clone();
+                                            let app_state = app_state.clone();
+
+                                            cx.spawn(async move |cx| {
+                                                let new_document = DocumentModel {
+                                                    id: 0,
+                                                    title: "Untitled".to_string(),
+                                                    content: serde_json::json!([]),
+                                                    folder_id: Some(folder_id),
+                                                };
+                                                let new_id = repository.insert_document(new_document).await?;
+                                                let _ = cx.update(|cx: &mut App| {
+                                                    AppSidebar::refresh_data(&this_clone, cx);
+                                                    cx.update_global::<DocumentState, _>(|state, _| {
+                                                        state.open_document_in_folder(new_id, "Untitled".to_string(), Some(folder_id));
+                                                    });
+                                                    app_state.update(cx, |app_state, cx| {
+                                                        let document_screen = DocumentScreen::new(cx.weak_entity());
+                                                        app_state.navigator.push(document_screen, cx);
+                                                    });
+                                                });
+                                                Ok::<_, anyhow::Error>(())
+                                            })
+                                            .detach();
+                                        }
+                                    }),
+                            )
+                            .item(
+                                PopupMenuItem::new("New sub-folder")
+                                    .icon(Icon::new(IconName::Folder))
+                                    .on_click({
+                                        let this = this.clone();
+                                        move |_, _, cx| {
+                                            let folder_repo = cx.global::<RepositoryState>().folders.clone();
+                                            let this_clone = this.clone();
+
+                                            cx.spawn(async move |cx| {
+                                                folder_repo.insert_folder("Untitled".to_string(), Some(folder_id)).await?;
+                                                let _ = cx.update(|cx| {
+                                                    AppSidebar::refresh_data(&this_clone, cx);
+                                                });
+                                                Ok::<_, anyhow::Error>(())
+                                            })
+                                            .detach();
+                                        }
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                PopupMenuItem::new("Rename")
+                                    .on_click({
+                                        let this = this.clone();
+                                        let name = folder_name.clone();
+                                        move |_, window, cx| {
+                                            this.update(cx, |state, cx| {
+                                                state.start_rename(EditingItem::Folder(folder_id), &name, window, cx);
+                                            });
+                                        }
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                PopupMenuItem::new("Delete with contents")
+                                    .icon(Icon::default().path("icons/trash-2.svg"))
+                                    .on_click({
+                                        let this = this.clone();
+                                        let folder_name = folder_name.clone();
+                                        move |_, window, cx| {
+                                            let this_clone = this.clone();
+                                            let name = folder_name.clone();
+
+                                            ConfirmDialog::new("Delete Folder")
+                                                .message(format!(
+                                                    "Are you sure you want to delete \"{}\" and all its contents? This action cannot be undone.",
+                                                    name
+                                                ))
+                                                .confirm_text("Delete")
+                                                .cancel_text("Cancel")
+                                                .danger()
+                                                .on_confirm(move |window, cx| {
+                                                    let folder_repo = cx.global::<RepositoryState>().folders.clone();
+                                                    let this_spawn = this_clone.clone();
+                                                    let name = name.clone();
+                                                    window.push_notification(format!("\"{}\" has been deleted", name), cx);
+                                                    cx.spawn(async move |cx| {
+                                                        let _ = folder_repo.delete_folder(folder_id).await;
+                                                        let _ = cx.update(|cx| { AppSidebar::refresh_data(&this_spawn, cx); });
+                                                        Ok::<_, anyhow::Error>(())
+                                                    }).detach();
+                                                    true
+                                                })
+                                                .open(window, cx);
+                                        }
+                                    }),
+                            )
+                            .item(
+                                PopupMenuItem::new("Delete, keep children")
+                                    .icon(Icon::default().path("icons/trash-2.svg"))
+                                    .on_click({
+                                        let this = this.clone();
+                                        let folder_name = folder_name.clone();
+                                        move |_, window, cx| {
+                                            let this_clone = this.clone();
+                                            let name = folder_name.clone();
+
+                                            ConfirmDialog::new("Delete Folder")
+                                                .message(format!(
+                                                    "Delete \"{}\" but keep its documents and sub-folders?",
+                                                    name
+                                                ))
+                                                .confirm_text("Delete")
+                                                .cancel_text("Cancel")
+                                                .danger()
+                                                .on_confirm(move |window, cx| {
+                                                    let folder_repo = cx.global::<RepositoryState>().folders.clone();
+                                                    let this_spawn = this_clone.clone();
+                                                    let name = name.clone();
+                                                    window.push_notification(format!("\"{}\" has been deleted", name), cx);
+                                                    cx.spawn(async move |cx| {
+                                                        let _ = folder_repo.delete_folder_keep_children(folder_id).await;
+                                                        let _ = cx.update(|cx| { AppSidebar::refresh_data(&this_spawn, cx); });
+                                                        Ok::<_, anyhow::Error>(())
+                                                    }).detach();
+                                                    true
+                                                })
+                                                .open(window, cx);
+                                        }
+                                    }),
+                            )
+                        }
+                    });
 
                 elements.push(folder_row);
 
@@ -860,12 +1098,22 @@ fn render_tree_items(
                     .child({
                         let is_editing = editing_item == Some(EditingItem::Document(document_id));
                         if is_editing {
-                            div().flex_1().mx_neg_1().child(
-                                Input::new(rename_input.as_ref().unwrap())
-                                    .xsmall()
-                                    .appearance(false)
-                                    .text_sm(),
-                            )
+                            let this_esc = this.clone();
+                            div().flex_1().mx_neg_1()
+                                .on_key_down(move |event, _, cx| {
+                                    if event.keystroke.key.as_str() == "escape" {
+                                        cx.stop_propagation();
+                                        this_esc.update(cx, |state, cx| {
+                                            state.cancel_rename(cx);
+                                        });
+                                    }
+                                })
+                                .child(
+                                    Input::new(rename_input.as_ref().unwrap())
+                                        .xsmall()
+                                        .appearance(false)
+                                        .text_sm(),
+                                )
                         } else {
                             let this = this.clone();
                             let name = document_title.clone();
@@ -1043,7 +1291,77 @@ fn render_tree_items(
                                             }),
                                     ),
                             ),
-                    );
+                    )
+                    .context_menu({
+                        let this = this.clone();
+                        let doc_title = document_title.clone();
+                        let delete_title2 = document.title.clone();
+                        let this_clone2 = this_clone.clone();
+                        move |menu, _window, _cx| {
+                            menu.item(
+                                PopupMenuItem::new("Rename")
+                                    .on_click({
+                                        let this = this.clone();
+                                        let name = doc_title.clone();
+                                        move |_, window, cx| {
+                                            this.update(cx, |state, cx| {
+                                                state.start_rename(EditingItem::Document(document_id), &name, window, cx);
+                                            });
+                                        }
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                PopupMenuItem::new("Delete")
+                                    .icon(Icon::default().path("icons/trash-2.svg"))
+                                    .on_click({
+                                        let this_clone = this_clone2.clone();
+                                        let delete_title = delete_title2.clone();
+                                        move |_, window, cx| {
+                                            let this_clone = this_clone.clone();
+                                            let delete_title = delete_title.clone();
+
+                                            ConfirmDialog::new("Delete Page")
+                                                .message(format!(
+                                                    "Are you sure you want to delete \"{}\"? This action cannot be undone.",
+                                                    delete_title
+                                                ))
+                                                .confirm_text("Delete")
+                                                .cancel_text("Cancel")
+                                                .danger()
+                                                .on_confirm(move |window, cx| {
+                                                    let repository = cx.global::<RepositoryState>().documents.clone();
+                                                    let this_for_spawn = this_clone.clone();
+                                                    let deleted_title = delete_title.clone();
+
+                                                    cx.update_global::<DocumentState, _>(|state, _| {
+                                                        state.remove_document(document_id);
+                                                        if state.current_opened_document == Some(document_id) {
+                                                            state.current_opened_document = None;
+                                                        }
+                                                    });
+
+                                                    window.push_notification(
+                                                        format!("\"{}\" has been deleted", deleted_title),
+                                                        cx,
+                                                    );
+
+                                                    cx.spawn(async move |cx| {
+                                                        let _ = repository.delete_document(document_id).await;
+                                                        let _ = cx.update(|cx| {
+                                                            AppSidebar::refresh_data(&this_for_spawn, cx);
+                                                        });
+                                                        Ok::<_, anyhow::Error>(())
+                                                    }).detach();
+
+                                                    true
+                                                })
+                                                .open(window, cx);
+                                        }
+                                    }),
+                            )
+                        }
+                    });
 
                 elements.push(doc_row);
             }
