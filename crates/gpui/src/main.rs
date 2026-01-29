@@ -19,7 +19,9 @@ use remindr_gpui::{
             settings_state::Settings,
         },
     },
-    infrastructure::repositories::document_repository::DocumentRepository,
+    infrastructure::repositories::{
+        document_repository::DocumentRepository, folder_repository::FolderRepository,
+    },
 };
 use rust_embed::RustEmbed;
 use sqlx::{SqlitePool, migrate};
@@ -129,6 +131,7 @@ async fn main() -> Result<(), Error> {
 
         cx.set_global(RepositoryState {
             documents: DocumentRepository::new(pool.clone()),
+            folders: FolderRepository::new(pool.clone()),
         });
 
         cx.set_global(DocumentState::default());

@@ -83,6 +83,7 @@ impl TitleInputHandler {
 pub struct OpenedDocument {
     pub uid: i32,
     pub title: String,
+    pub folder_id: Option<i32>,
     pub state: LoadingState<DocumentContent>,
     /// Indicates if a loading task is currently in progress
     pub loading_in_progress: bool,
@@ -136,11 +137,17 @@ impl DocumentState {
 
     /// Add a document tab with just metadata (loading state)
     pub fn open_document(&mut self, id: i32, title: String) {
+        self.open_document_in_folder(id, title, None);
+    }
+
+    /// Add a document tab with folder context
+    pub fn open_document_in_folder(&mut self, id: i32, title: String, folder_id: Option<i32>) {
         let already_exists = self.documents.iter().any(|doc| doc.uid == id);
         if !already_exists {
             self.documents.push(OpenedDocument {
                 uid: id,
                 title,
+                folder_id,
                 state: LoadingState::Loading,
                 loading_in_progress: false,
             });
@@ -259,6 +266,7 @@ impl DocumentState {
                 let renderer = content.renderer.clone();
                 let doc_uid = document.uid;
                 let doc_title = document.title.clone();
+                let doc_folder_id = document.folder_id;
 
                 cx.spawn(async move |cx| {
                     sleep(Duration::from_secs(1)).await;
@@ -283,6 +291,7 @@ impl DocumentState {
                                     id: doc_uid,
                                     title: doc_title,
                                     content: Value::from_iter(nodes),
+                                    folder_id: doc_folder_id,
                                 };
 
                                 cx.spawn(async move |cx| {

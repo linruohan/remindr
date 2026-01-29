@@ -14,31 +14,36 @@ impl DocumentRepository {
     }
 
     pub async fn get_documents(&self) -> Result<Vec<DocumentModel>, Error> {
-        query_as::<_, DocumentEntity>("SELECT id, title, content FROM documents ORDER BY id ASC")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| anyhow::Error::from(e))
-            .map(|documents| {
-                documents
-                    .into_iter()
-                    .map(DocumentEntity::into)
-                    .collect::<Vec<DocumentModel>>()
-            })
+        query_as::<_, DocumentEntity>(
+            "SELECT id, title, content, folder_id FROM documents ORDER BY id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::Error::from(e))
+        .map(|documents| {
+            documents
+                .into_iter()
+                .map(DocumentEntity::into)
+                .collect::<Vec<DocumentModel>>()
+        })
     }
 
     pub async fn get_document_by_id(&self, id: i32) -> Result<DocumentModel, Error> {
-        query_as::<_, DocumentEntity>("SELECT id, title, content FROM documents WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .map(|r| r.into())
-            .map_err(|e| anyhow::Error::from(e))
+        query_as::<_, DocumentEntity>(
+            "SELECT id, title, content, folder_id FROM documents WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map(|r| r.into())
+        .map_err(|e| anyhow::Error::from(e))
     }
 
     pub async fn insert_document(&self, document: DocumentModel) -> Result<i32, Error> {
-        let res = query("INSERT INTO documents (title, content) VALUES (?, ?)")
+        let res = query("INSERT INTO documents (title, content, folder_id) VALUES (?, ?, ?)")
             .bind(document.title)
             .bind(document.content)
+            .bind(document.folder_id)
             .execute(&self.pool)
             .await
             .map_err(|e| anyhow::Error::from(e))?;
@@ -48,10 +53,22 @@ impl DocumentRepository {
     }
 
     pub async fn update_document(&self, document: DocumentModel) -> Result<(), Error> {
-        query("UPDATE documents SET title = $1, content = $2 WHERE id = $3")
+        query("UPDATE documents SET title = $1, content = $2, folder_id = $3 WHERE id = $4")
             .bind(document.title)
             .bind(document.content)
+            .bind(document.folder_id)
             .bind(document.id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::Error::from(e))?;
+
+        Ok(())
+    }
+
+    pub async fn move_document(&self, id: i32, folder_id: Option<i32>) -> Result<(), Error> {
+        query("UPDATE documents SET folder_id = ? WHERE id = ?")
+            .bind(folder_id)
+            .bind(id)
             .execute(&self.pool)
             .await
             .map_err(|e| anyhow::Error::from(e))?;
