@@ -14,7 +14,7 @@ use gpui_component::{
 use crate::{
     LoadingState,
     app::{
-        components::confirm_dialog::ConfirmDialog,
+        components::{confirm_dialog::ConfirmDialog, settings_dialog::SettingsDialog},
         screens::document_screen::DocumentScreen,
         states::{
             app_state::AppState, document_state::DocumentState, repository_state::RepositoryState,
@@ -111,11 +111,11 @@ impl AppSidebar {
                     ),
             )
             .dropdown_menu(|menu, _, _| {
-                menu.item(
+                menu.min_w(px(220.)).item(
                     PopupMenuItem::new("Settings")
                         .icon(Icon::new(IconName::Settings))
-                        .on_click(|_, _, _| {
-                            // TODO: Open settings
+                        .on_click(|_, window, cx| {
+                            SettingsDialog::open(window, cx);
                         }),
                 )
             })

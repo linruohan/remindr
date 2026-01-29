@@ -4,7 +4,7 @@ use gpui_component::{ActiveTheme, Root};
 use crate::app::{
     components::{sidebar::AppSidebar, title_bar::TitleBar},
     screens::home_screen::HomeScreen,
-    states::app_state::AppState,
+    states::{app_state::AppState, settings_state::Settings},
 };
 
 pub mod document_screen;
@@ -39,11 +39,17 @@ impl Render for AppRouter {
         let notification_layer = Root::render_notification_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
 
+        let ui_font_size = cx
+            .try_global::<Settings>()
+            .map(|s| s.appearance.ui_font_size)
+            .unwrap_or(14.0);
+
         div()
             .w_full()
             .h_full()
             .flex()
             .flex_col()
+            .text_size(px(ui_font_size))
             .child(self.title_bar.clone())
             .child(
                 div()

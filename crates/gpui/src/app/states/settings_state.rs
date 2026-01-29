@@ -30,11 +30,15 @@ impl ThemeMode {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     contexts: Vec<DbContext>,
     #[serde(default)]
     pub theme: ThemeSettings,
+    #[serde(default)]
+    pub appearance: AppearanceSettings,
+    #[serde(default)]
+    pub editor: EditorSettings,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -47,12 +51,40 @@ pub struct ThemeSettings {
     pub mode: ThemeMode,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AppearanceSettings {
+    #[serde(default = "default_ui_font_size")]
+    pub ui_font_size: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EditorSettings {
+    #[serde(default = "default_editor_font_size")]
+    pub font_size: f32,
+    #[serde(default = "default_zoom")]
+    pub zoom: f32,
+    #[serde(default)]
+    pub disabled_blocks: Vec<String>,
+}
+
 fn default_light_theme() -> String {
     "Default Light".to_string()
 }
 
 fn default_dark_theme() -> String {
     "Default Dark".to_string()
+}
+
+fn default_ui_font_size() -> f32 {
+    14.0
+}
+
+fn default_editor_font_size() -> f32 {
+    16.0
+}
+
+fn default_zoom() -> f32 {
+    1.0
 }
 
 impl Default for ThemeSettings {
@@ -65,11 +97,50 @@ impl Default for ThemeSettings {
     }
 }
 
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            ui_font_size: default_ui_font_size(),
+        }
+    }
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            font_size: default_editor_font_size(),
+            zoom: default_zoom(),
+            disabled_blocks: Vec::new(),
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             contexts: Vec::new(),
             theme: ThemeSettings::default(),
+            appearance: AppearanceSettings::default(),
+            editor: EditorSettings::default(),
+        }
+    }
+}
+
+impl Settings {
+    pub fn save(&self) {
+        if let Some(home) = dirs::home_dir() {
+            let config_path = if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
+                home.join(".config").join("remindr")
+            } else {
+                dirs::config_dir()
+                    .unwrap_or(home.join(".config"))
+                    .join("remindr")
+            };
+
+            let settings_file = config_path.join("settings.json");
+            if let Ok(json) = serde_json::to_string_pretty(self) {
+                let _ = std::fs::write(settings_file, json);
+            }
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::app::{
         heading::data::HeadingMetadata,
         text::data::TextMetadata,
     },
-    states::node_state::NodeState,
+    states::{node_state::NodeState, settings_state::Settings},
 };
 
 pub struct SlashMenuDismissEvent {
@@ -22,6 +22,7 @@ pub struct SlashMenuDismissEvent {
 
 #[derive(Clone)]
 struct MenuItem {
+    id: &'static str,
     label: &'static str,
     icon_path: &'static str,
     shortcut: Option<&'static str>,
@@ -64,24 +65,28 @@ impl SlashMenu {
     ) -> Self {
         let items = vec![
             MenuItem {
+                id: "text",
                 label: "Text",
                 icon_path: "icons/pilcrow.svg",
                 shortcut: None,
                 action: MenuAction::InsertText,
             },
             MenuItem {
+                id: "heading_2",
                 label: "Heading 2",
                 icon_path: "icons/heading-2.svg",
                 shortcut: Some("##"),
                 action: MenuAction::InsertHeading2,
             },
             MenuItem {
+                id: "heading_3",
                 label: "Heading 3",
                 icon_path: "icons/heading-3.svg",
                 shortcut: Some("###"),
                 action: MenuAction::InsertHeading3,
             },
             MenuItem {
+                id: "divider",
                 label: "Divider",
                 icon_path: "icons/separator-horizontal.svg",
                 shortcut: Some("---"),
@@ -148,10 +153,18 @@ impl SlashMenu {
         let search = self.search_input.read(cx).value();
         let search = search.to_lowercase();
 
+        let disabled_blocks = cx
+            .try_global::<Settings>()
+            .map(|s| s.editor.disabled_blocks.clone())
+            .unwrap_or_default();
+
         self.items
             .iter()
             .enumerate()
             .filter(|(_, item)| {
+                if disabled_blocks.contains(&item.id.to_string()) {
+                    return false;
+                }
                 if search.is_empty() {
                     return true;
                 }

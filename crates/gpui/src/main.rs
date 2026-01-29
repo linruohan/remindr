@@ -14,7 +14,10 @@ use remindr_gpui::{
         components::rich_text,
         remindr::Remindr,
         screens::AppRouter,
-        states::{document_state::DocumentState, repository_state::RepositoryState},
+        states::{
+            document_state::DocumentState, repository_state::RepositoryState,
+            settings_state::Settings,
+        },
     },
     infrastructure::repositories::document_repository::DocumentRepository,
 };
@@ -155,6 +158,43 @@ async fn main() -> Result<(), Error> {
                 apply_theme(window, cx);
             })
             .expect("failed to update window");
+
+        // Watch settings.json for external changes
+        if let Ok(config_dir) = remindr.get_config_dir("remindr") {
+            let settings_file = config_dir.join("settings.json");
+            cx.spawn(async move |cx| {
+                let mut last_modified = std::fs::metadata(&settings_file)
+                    .and_then(|m| m.modified())
+                    .ok();
+
+                loop {
+                    smol::Timer::after(std::time::Duration::from_secs(2)).await;
+
+                    let current_modified = std::fs::metadata(&settings_file)
+                        .and_then(|m| m.modified())
+                        .ok();
+
+                    if current_modified != last_modified {
+                        last_modified = current_modified;
+
+                        if let Ok(content) = std::fs::read_to_string(&settings_file) {
+                            if let Ok(new_settings) = serde_json::from_str::<Settings>(&content) {
+                                let result = cx.update(|cx| {
+                                    cx.update_global::<Settings, _>(|settings, _| {
+                                        *settings = new_settings;
+                                    });
+                                    apply_theme_global(cx);
+                                });
+                                if result.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .detach();
+        }
 
         set_app_menus(cx);
         cx.on_action(|_: &Quit, cx| cx.quit());

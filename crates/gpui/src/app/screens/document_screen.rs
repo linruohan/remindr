@@ -18,6 +18,7 @@ use crate::{
             app_state::AppState,
             document_state::{DocumentContent, DocumentState, OpenedDocument, PersistenceState},
             repository_state::RepositoryState,
+            settings_state::Settings,
         },
     },
 };
@@ -377,6 +378,11 @@ struct DocumentStateLoaded {
 
 impl RenderOnce for DocumentStateLoaded {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let editor_font_size = cx
+            .try_global::<Settings>()
+            .map(|s| s.editor.font_size * s.editor.zoom)
+            .unwrap_or(16.0);
+
         div()
             .bg(cx.theme().background.lighten(0.2))
             .flex()
@@ -397,6 +403,7 @@ impl RenderOnce for DocumentStateLoaded {
                             .w_full()
                             .mx_auto()
                             .py_5()
+                            .text_size(px(editor_font_size))
                             .child(
                                 Input::new(&self.content.title_input)
                                     .appearance(false)
