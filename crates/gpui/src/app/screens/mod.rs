@@ -26,6 +26,11 @@ impl AppRouter {
             state
         });
 
+        cx.observe_global::<Settings>(|_this, cx| {
+            cx.notify();
+        })
+        .detach();
+
         Self {
             app_state: app_state.clone(),
             sidebar: AppSidebar::new(app_state, cx),

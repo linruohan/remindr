@@ -257,11 +257,20 @@ impl NodeMenuProvider for TextNode {
 }
 
 impl Render for TextNode {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .min_w(px(820.0))
-            .w_full()
-            .my_2()
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let text_font_size = cx
+            .try_global::<crate::app::states::settings_state::Settings>()
+            .map(|s| s.editor.block_font_sizes.text);
+
+        let container = div().min_w(px(820.0)).w_full().my_2();
+
+        let container = if let Some(size) = text_font_size {
+            container.text_size(px(size))
+        } else {
+            container
+        };
+
+        container
             .child(RichTextView::new(self.rich_text_state.clone()).ml_3())
             .child(self.menu.clone())
     }

@@ -1,6 +1,8 @@
+use std::sync::Mutex;
+
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Root, Sizable, StyledExt,
+    ActiveTheme, Disableable, Icon, IconName, Root, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState, NumberInput, NumberInputEvent},
@@ -21,42 +23,67 @@ use crate::app::{
 enum SettingsSection {
     Appearance,
     Editor,
+    Blocks,
 }
 
-struct BlockType {
+struct NodeComponent {
+    id: &'static str,
+    label: &'static str,
+    description: &'static str,
+    icon_path: &'static str,
+}
+
+const NODE_COMPONENTS: &[NodeComponent] = &[
+    NodeComponent {
+        id: "text",
+        label: "Text",
+        description: "Plain text paragraph block.",
+        icon_path: "icons/pilcrow.svg",
+    },
+    NodeComponent {
+        id: "heading",
+        label: "Heading",
+        description: "Section headings with multiple levels.",
+        icon_path: "icons/heading-2.svg",
+    },
+    NodeComponent {
+        id: "divider",
+        label: "Divider",
+        description: "Horizontal separator line.",
+        icon_path: "icons/separator-horizontal.svg",
+    },
+];
+
+struct HeadingLevel {
     id: &'static str,
     label: &'static str,
     icon_path: &'static str,
 }
 
-const BLOCK_TYPES: &[BlockType] = &[
-    BlockType {
-        id: "text",
-        label: "Text",
-        icon_path: "icons/pilcrow.svg",
-    },
-    BlockType {
+const HEADING_LEVELS: &[HeadingLevel] = &[
+    HeadingLevel {
         id: "heading_2",
         label: "Heading 2",
         icon_path: "icons/heading-2.svg",
     },
-    BlockType {
+    HeadingLevel {
         id: "heading_3",
         label: "Heading 3",
         icon_path: "icons/heading-3.svg",
     },
-    BlockType {
-        id: "divider",
-        label: "Divider",
-        icon_path: "icons/separator-horizontal.svg",
-    },
 ];
+
+static SETTINGS_WINDOW: Mutex<Option<WindowId>> = Mutex::new(None);
 
 pub struct SettingsWindow {
     active_section: SettingsSection,
     ui_font_size_input: Entity<InputState>,
     editor_font_size_input: Entity<InputState>,
     zoom_input: Entity<InputState>,
+    h1_font_size_input: Entity<InputState>,
+    h2_font_size_input: Entity<InputState>,
+    h3_font_size_input: Entity<InputState>,
+    text_font_size_input: Entity<InputState>,
     light_theme_search: Entity<InputState>,
     dark_theme_search: Entity<InputState>,
 }
@@ -80,6 +107,32 @@ impl SettingsWindow {
         let zoom_input = cx.new(|cx| {
             let mut state = InputState::new(window, cx);
             state.set_value(format!("{}", settings.editor.zoom), window, cx);
+            state
+        });
+
+        let block_sizes = &settings.editor.block_font_sizes;
+
+        let h1_font_size_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(format!("{}", block_sizes.heading_1 as i32), window, cx);
+            state
+        });
+
+        let h2_font_size_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(format!("{}", block_sizes.heading_2 as i32), window, cx);
+            state
+        });
+
+        let h3_font_size_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(format!("{}", block_sizes.heading_3 as i32), window, cx);
+            state
+        });
+
+        let text_font_size_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(format!("{}", block_sizes.text as i32), window, cx);
             state
         });
 
@@ -115,7 +168,17 @@ impl SettingsWindow {
         cx.subscribe_in(
             &ui_font_size_input,
             window,
-            |this, _, _: &NumberInputEvent, _, cx| {
+            |this, _, event: &NumberInputEvent, window, cx| {
+                let NumberInputEvent::Step(action) = event;
+                this.step_input(
+                    &this.ui_font_size_input.clone(),
+                    action,
+                    1.0,
+                    10.0,
+                    24.0,
+                    window,
+                    cx,
+                );
                 this.on_ui_font_size_changed(cx);
             },
         )
@@ -124,7 +187,17 @@ impl SettingsWindow {
         cx.subscribe_in(
             &editor_font_size_input,
             window,
-            |this, _, _: &NumberInputEvent, _, cx| {
+            |this, _, event: &NumberInputEvent, window, cx| {
+                let NumberInputEvent::Step(action) = event;
+                this.step_input(
+                    &this.editor_font_size_input.clone(),
+                    action,
+                    1.0,
+                    10.0,
+                    32.0,
+                    window,
+                    cx,
+                );
                 this.on_editor_font_size_changed(cx);
             },
         )
@@ -133,11 +206,49 @@ impl SettingsWindow {
         cx.subscribe_in(
             &zoom_input,
             window,
-            |this, _, _: &NumberInputEvent, _, cx| {
+            |this, _, event: &NumberInputEvent, window, cx| {
+                let NumberInputEvent::Step(action) = event;
+                this.step_input(&this.zoom_input.clone(), action, 0.1, 0.5, 2.0, window, cx);
                 this.on_zoom_changed(cx);
             },
         )
         .detach();
+
+        // Block font size subscriptions
+        for (input, block_key) in [
+            (&h1_font_size_input, "heading_1"),
+            (&h2_font_size_input, "heading_2"),
+            (&h3_font_size_input, "heading_3"),
+            (&text_font_size_input, "text"),
+        ] {
+            let block_key = block_key.to_string();
+            cx.subscribe_in(input, window, {
+                let block_key = block_key.clone();
+                move |_this, _, event: &InputEvent, _, cx| {
+                    if let InputEvent::Change = event {
+                        Self::on_block_font_size_changed(&block_key, _this, cx);
+                    }
+                }
+            })
+            .detach();
+
+            cx.subscribe_in(input, window, {
+                let block_key = block_key.clone();
+                move |this, _, event: &NumberInputEvent, window, cx| {
+                    let NumberInputEvent::Step(action) = event;
+                    let input = match block_key.as_str() {
+                        "heading_1" => &this.h1_font_size_input,
+                        "heading_2" => &this.h2_font_size_input,
+                        "heading_3" => &this.h3_font_size_input,
+                        _ => &this.text_font_size_input,
+                    }
+                    .clone();
+                    this.step_input(&input, action, 1.0, 8.0, 72.0, window, cx);
+                    Self::on_block_font_size_changed(&block_key, this, cx);
+                }
+            })
+            .detach();
+        }
 
         let light_theme_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
         let dark_theme_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
@@ -175,9 +286,38 @@ impl SettingsWindow {
             ui_font_size_input,
             editor_font_size_input,
             zoom_input,
+            h1_font_size_input,
+            h2_font_size_input,
+            h3_font_size_input,
+            text_font_size_input,
             light_theme_search,
             dark_theme_search,
         }
+    }
+
+    fn step_input(
+        &self,
+        input: &Entity<InputState>,
+        action: &gpui_component::input::StepAction,
+        step: f32,
+        min: f32,
+        max: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current: f32 = input.read(cx).value().parse().unwrap_or(0.0);
+        let new_value = match action {
+            gpui_component::input::StepAction::Increment => (current + step).min(max),
+            gpui_component::input::StepAction::Decrement => (current - step).max(min),
+        };
+        let formatted = if step < 1.0 {
+            format!("{:.1}", new_value)
+        } else {
+            format!("{}", new_value as i32)
+        };
+        input.update(cx, |state, cx| {
+            state.set_value(formatted, window, cx);
+        });
     }
 
     fn on_ui_font_size_changed(&self, cx: &mut Context<Self>) {
@@ -213,7 +353,44 @@ impl SettingsWindow {
         }
     }
 
+    fn on_block_font_size_changed(block_key: &str, this: &Self, cx: &mut Context<Self>) {
+        let input = match block_key {
+            "heading_1" => &this.h1_font_size_input,
+            "heading_2" => &this.h2_font_size_input,
+            "heading_3" => &this.h3_font_size_input,
+            _ => &this.text_font_size_input,
+        };
+        let value = input.read(cx).value();
+        if let Ok(size) = value.parse::<f32>() {
+            let size = size.clamp(8.0, 72.0);
+            let block_key = block_key.to_string();
+            cx.update_global::<Settings, _>(move |settings, _| {
+                match block_key.as_str() {
+                    "heading_1" => settings.editor.block_font_sizes.heading_1 = size,
+                    "heading_2" => settings.editor.block_font_sizes.heading_2 = size,
+                    "heading_3" => settings.editor.block_font_sizes.heading_3 = size,
+                    _ => settings.editor.block_font_sizes.text = size,
+                }
+                settings.save();
+            });
+        }
+    }
+
     pub fn open(cx: &mut App) {
+        // If a settings window already exists, focus it
+        if let Some(window_id) = *SETTINGS_WINDOW.lock().unwrap() {
+            for window in cx.windows() {
+                if window.window_id() == window_id {
+                    let _ = window.update(cx, |_, window, _| {
+                        window.activate_window();
+                    });
+                    return;
+                }
+            }
+            // Window no longer exists, clear the handle
+            *SETTINGS_WINDOW.lock().unwrap() = None;
+        }
+
         let window_size = size(px(860.), px(600.));
         let window_bounds = Bounds::centered(None, window_size, cx);
 
@@ -240,6 +417,8 @@ impl SettingsWindow {
                     cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("failed to open settings window");
+
+            *SETTINGS_WINDOW.lock().unwrap() = Some(window.window_id());
 
             window
                 .update(cx, |_, window, _| {
@@ -295,6 +474,7 @@ impl SettingsWindow {
                 "icons/palette.svg",
             ),
             (SettingsSection::Editor, "Editor", "icons/file-text.svg"),
+            (SettingsSection::Blocks, "Blocks", "icons/layout-grid.svg"),
         ];
 
         let active = self.active_section;
@@ -348,30 +528,22 @@ impl SettingsWindow {
     }
 
     fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let section_title = match self.active_section {
+            SettingsSection::Appearance => "Appearance",
+            SettingsSection::Editor => "Editor",
+            SettingsSection::Blocks => "Blocks",
+        };
+
         h_flex()
             .w_full()
             .justify_between()
             .items_center()
             .pb_4()
             .child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(
-                        div()
-                            .px_2()
-                            .py_0p5()
-                            .rounded_sm()
-                            .bg(cx.theme().accent)
-                            .text_xs()
-                            .text_color(cx.theme().accent_foreground)
-                            .child("User"),
-                    )
-                    .child(
-                        Label::new("remindr")
-                            .text_sm()
-                            .text_color(cx.theme().foreground),
-                    ),
+                Label::new(section_title)
+                    .text_sm()
+                    .font_semibold()
+                    .text_color(cx.theme().foreground),
             )
             .child(
                 Button::new("edit-settings-json")
@@ -384,57 +556,40 @@ impl SettingsWindow {
             )
     }
 
-    fn render_section_title(title: &str, fg: Hsla) -> AnyElement {
-        div()
-            .text_lg()
-            .font_semibold()
-            .text_color(fg)
-            .pb_2()
-            .child(title.to_string())
-            .into_any_element()
-    }
+    fn render_number_with_reset(
+        &self,
+        id: &str,
+        input: &Entity<InputState>,
+        default_value: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let input_clone = input.clone();
+        let current: f32 = input.read(cx).value().parse().unwrap_or(0.0);
+        let is_default = (current - default_value).abs() < 0.01;
+        let muted_fg = cx.theme().muted_foreground;
 
-    fn render_sub_header(label: &str, fg: Hsla) -> AnyElement {
-        Label::new(label.to_string())
-            .text_sm()
-            .font_semibold()
-            .text_color(fg)
-            .into_any_element()
-    }
-
-    fn render_setting_row(
-        label: &str,
-        description: &str,
-        control: AnyElement,
-        fg: Hsla,
-        muted_fg: Hsla,
-        border: Hsla,
-    ) -> AnyElement {
         h_flex()
-            .w_full()
-            .justify_between()
+            .gap_1()
             .items_center()
-            .py_3()
-            .border_b_1()
-            .border_color(border)
+            .child(div().w(px(120.)).child(NumberInput::new(input).small()))
             .child(
-                v_flex()
-                    .flex_1()
-                    .gap_0p5()
-                    .child(
-                        Label::new(label.to_string())
-                            .text_sm()
-                            .font_semibold()
-                            .text_color(fg),
-                    )
-                    .child(
-                        Label::new(description.to_string())
-                            .text_xs()
-                            .text_color(muted_fg),
-                    ),
+                Button::new(SharedString::from(id.to_string()))
+                    .xsmall()
+                    .ghost()
+                    .icon(Icon::new(IconName::Undo2).xsmall().text_color(muted_fg))
+                    .disabled(is_default)
+                    .tooltip("Reset to default")
+                    .on_click(cx.listener(move |_this, _, window, cx| {
+                        let formatted = if default_value.fract() == 0.0 {
+                            format!("{}", default_value as i32)
+                        } else {
+                            format!("{:.1}", default_value)
+                        };
+                        input_clone.update(cx, |state, cx| {
+                            state.set_value(formatted, window, cx);
+                        });
+                    })),
             )
-            .child(div().flex_shrink_0().ml_4().child(control))
-            .into_any_element()
     }
 
     fn render_appearance_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -443,7 +598,6 @@ impl SettingsWindow {
 
         let fg = cx.theme().foreground;
         let muted_fg = cx.theme().muted_foreground;
-        let secondary_fg = cx.theme().secondary_foreground;
         let border = cx.theme().border;
 
         let theme_mode_control = self
@@ -467,51 +621,133 @@ impl SettingsWindow {
                 cx,
             )
             .into_any_element();
-        let ui_font_control = NumberInput::new(&self.ui_font_size_input)
-            .small()
+        let ui_font_control = self
+            .render_number_with_reset("reset-ui-font", &self.ui_font_size_input.clone(), 14.0, cx)
             .into_any_element();
 
-        v_flex()
-            .gap_1()
-            .child(Self::render_section_title("Appearance", fg))
-            .child(Self::render_sub_header("Theme", secondary_fg))
-            .child(Self::render_setting_row(
-                "Theme Mode",
-                "Choose between light, dark, or system theme.",
-                theme_mode_control,
-                fg,
-                muted_fg,
-                border,
-            ))
-            .child(Self::render_setting_row(
-                "Light Theme",
-                "Theme used in light mode.",
-                light_theme_control,
-                fg,
-                muted_fg,
-                border,
-            ))
-            .child(Self::render_setting_row(
-                "Dark Theme",
-                "Theme used in dark mode.",
-                dark_theme_control,
-                fg,
-                muted_fg,
-                border,
-            ))
+        // -- Theme card --
+        let theme_card = v_flex()
+            .w_full()
+            .p_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(border)
+            .gap_3()
             .child(
-                div()
-                    .pt_4()
-                    .child(Self::render_sub_header("Font", secondary_fg)),
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_8()
+                            .rounded_md()
+                            .bg(border)
+                            .child(
+                                gpui_component::Icon::default()
+                                    .path("icons/palette.svg")
+                                    .size_4()
+                                    .text_color(fg),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(Label::new("Theme").text_sm().font_semibold().text_color(fg))
+                            .child(
+                                Label::new("Customize the application theme.")
+                                    .text_xs()
+                                    .text_color(muted_fg),
+                            ),
+                    ),
             )
-            .child(Self::render_setting_row(
-                "UI Font Size",
-                "Font size for the application interface (10-24).",
-                ui_font_control,
-                fg,
-                muted_fg,
-                border,
-            ))
+            .child(
+                v_flex()
+                    .gap_0()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .py_2()
+                            .px_2()
+                            .child(Label::new("Theme Mode").text_xs().text_color(fg))
+                            .child(theme_mode_control),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .py_2()
+                            .px_2()
+                            .child(Label::new("Light Theme").text_xs().text_color(fg))
+                            .child(light_theme_control),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .py_2()
+                            .px_2()
+                            .child(Label::new("Dark Theme").text_xs().text_color(fg))
+                            .child(dark_theme_control),
+                    ),
+            );
+
+        // -- Font card --
+        let font_card = v_flex()
+            .w_full()
+            .p_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(border)
+            .gap_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_8()
+                            .rounded_md()
+                            .bg(border)
+                            .child(
+                                gpui_component::Icon::default()
+                                    .path("icons/type.svg")
+                                    .size_4()
+                                    .text_color(fg),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(Label::new("Font").text_sm().font_semibold().text_color(fg))
+                            .child(
+                                Label::new("Font size for the application interface.")
+                                    .text_xs()
+                                    .text_color(muted_fg),
+                            ),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .items_center()
+                    .py_2()
+                    .px_2()
+                    .child(Label::new("UI Font Size").text_xs().text_color(fg))
+                    .child(ui_font_control),
+            );
+
+        v_flex().gap_3().child(theme_card).child(font_card)
     }
 
     fn render_theme_mode_toggle(
@@ -679,125 +915,411 @@ impl SettingsWindow {
     }
 
     fn render_editor_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let settings = cx.global::<Settings>().clone();
-
         let fg = cx.theme().foreground;
         let muted_fg = cx.theme().muted_foreground;
-        let secondary_fg = cx.theme().secondary_foreground;
         let border = cx.theme().border;
 
-        let editor_font_control = NumberInput::new(&self.editor_font_size_input)
-            .small()
-            .into_any_element();
-        let zoom_control = NumberInput::new(&self.zoom_input)
-            .small()
-            .into_any_element();
-        let block_cards = self.render_block_cards(&settings, cx).into_any_element();
-
-        v_flex()
-            .gap_1()
-            .child(Self::render_section_title("Editor", fg))
-            .child(Self::render_sub_header("Font", secondary_fg))
-            .child(Self::render_setting_row(
-                "Editor Font Size",
-                "Font size for the document editor (10-32).",
-                editor_font_control,
-                fg,
-                muted_fg,
-                border,
-            ))
-            .child(Self::render_setting_row(
-                "Zoom",
-                "Zoom level for the editor (0.5-2.0).",
-                zoom_control,
-                fg,
-                muted_fg,
-                border,
-            ))
+        // -- Font card --
+        let font_card = v_flex()
+            .w_full()
+            .p_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(border)
+            .gap_3()
             .child(
-                div()
-                    .pt_4()
-                    .child(Self::render_sub_header("Blocks", secondary_fg)),
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_8()
+                            .rounded_md()
+                            .bg(border)
+                            .child(
+                                gpui_component::Icon::default()
+                                    .path("icons/type.svg")
+                                    .size_4()
+                                    .text_color(fg),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(Label::new("Font").text_sm().font_semibold().text_color(fg))
+                            .child(
+                                Label::new("Base font size and zoom for the editor.")
+                                    .text_xs()
+                                    .text_color(muted_fg),
+                            ),
+                    ),
             )
             .child(
-                Label::new("Enable or disable block types in the slash menu.")
-                    .text_xs()
-                    .text_color(muted_fg),
-            )
-            .child(div().pt_2().child(block_cards))
-    }
+                v_flex()
+                    .gap_0()
+                    .child(self.render_editor_setting_row(
+                        "Editor Font Size",
+                        &self.editor_font_size_input.clone(),
+                        16.0,
+                        cx,
+                    ))
+                    .child(self.render_editor_setting_row(
+                        "Zoom",
+                        &self.zoom_input.clone(),
+                        1.0,
+                        cx,
+                    )),
+            );
 
-    fn render_block_cards(&self, settings: &Settings, cx: &mut Context<Self>) -> impl IntoElement {
-        let disabled = settings.editor.disabled_blocks.clone();
-        let border_color = cx.theme().border;
-        let bg_color = cx.theme().secondary;
-        let fg_color = cx.theme().foreground;
+        // -- Block Font Sizes card --
+        struct BlockFontRow {
+            label: &'static str,
+            icon_path: &'static str,
+        }
 
-        v_flex().gap_2().children(BLOCK_TYPES.iter().map({
-            let disabled = disabled.clone();
-            move |block| {
-                let is_enabled = !disabled.contains(&block.id.to_string());
-                let block_id = block.id.to_string();
+        let block_rows = [
+            (
+                "h1",
+                BlockFontRow {
+                    label: "Heading 1",
+                    icon_path: "icons/heading-1.svg",
+                },
+                &self.h1_font_size_input,
+                30.0,
+            ),
+            (
+                "h2",
+                BlockFontRow {
+                    label: "Heading 2",
+                    icon_path: "icons/heading-2.svg",
+                },
+                &self.h2_font_size_input,
+                24.0,
+            ),
+            (
+                "h3",
+                BlockFontRow {
+                    label: "Heading 3",
+                    icon_path: "icons/heading-3.svg",
+                },
+                &self.h3_font_size_input,
+                20.0,
+            ),
+            (
+                "text",
+                BlockFontRow {
+                    label: "Text",
+                    icon_path: "icons/pilcrow.svg",
+                },
+                &self.text_font_size_input,
+                16.0,
+            ),
+        ];
 
+        let mut block_list = v_flex().gap_0();
+        for (id, row, input, default) in &block_rows {
+            let control = self
+                .render_number_with_reset(&format!("reset-{}", id), input, *default, cx)
+                .into_any_element();
+
+            block_list = block_list.child(
                 h_flex()
                     .w_full()
                     .justify_between()
                     .items_center()
-                    .px_3()
                     .py_2()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(border_color)
-                    .bg(bg_color)
                     .child(
                         h_flex()
                             .gap_2()
                             .items_center()
                             .child(
                                 gpui_component::Icon::default()
-                                    .path(block.icon_path)
-                                    .size_4()
-                                    .text_color(fg_color),
+                                    .path(row.icon_path)
+                                    .size_3()
+                                    .text_color(muted_fg),
                             )
+                            .child(Label::new(row.label.to_string()).text_xs().text_color(fg)),
+                    )
+                    .child(control),
+            );
+        }
+
+        let block_font_card = v_flex()
+            .w_full()
+            .p_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(border)
+            .gap_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_8()
+                            .rounded_md()
+                            .bg(border)
                             .child(
-                                Label::new(block.label.to_string())
-                                    .text_sm()
-                                    .text_color(fg_color),
+                                gpui_component::Icon::default()
+                                    .path("icons/text-cursor.svg")
+                                    .size_4()
+                                    .text_color(fg),
                             ),
                     )
                     .child(
-                        Switch::new(SharedString::from(format!("block-{}", block_id)))
-                            .checked(is_enabled)
-                            .small()
-                            .on_click(cx.listener({
-                                let block_id = block_id.clone();
-                                move |_, checked, _, cx| {
-                                    let block_id = block_id.clone();
-                                    cx.update_global::<Settings, _>(|settings, _| {
-                                        if *checked {
-                                            settings
-                                                .editor
-                                                .disabled_blocks
-                                                .retain(|b| b != &block_id);
-                                        } else {
-                                            settings.editor.disabled_blocks.push(block_id);
-                                        }
-                                        settings.save();
-                                    });
-                                    cx.notify();
-                                }
-                            })),
-                    )
+                        v_flex()
+                            .gap_0p5()
+                            .child(
+                                Label::new("Block Font Sizes")
+                                    .text_sm()
+                                    .font_semibold()
+                                    .text_color(fg),
+                            )
+                            .child(
+                                Label::new("Custom font size per block type.")
+                                    .text_xs()
+                                    .text_color(muted_fg),
+                            ),
+                    ),
+            )
+            .child(v_flex().w_full().px_2().child(block_list));
+
+        v_flex().gap_3().child(font_card).child(block_font_card)
+    }
+
+    fn render_editor_setting_row(
+        &self,
+        label: &str,
+        input: &Entity<InputState>,
+        default_value: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let fg = cx.theme().foreground;
+
+        let control = self
+            .render_number_with_reset(
+                &format!("reset-{}", label.to_lowercase().replace(' ', "-")),
+                input,
+                default_value,
+                cx,
+            )
+            .into_any_element();
+
+        h_flex()
+            .w_full()
+            .justify_between()
+            .items_center()
+            .py_2()
+            .px_2()
+            .child(Label::new(label.to_string()).text_xs().text_color(fg))
+            .child(control)
+    }
+
+    fn render_blocks_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let settings = cx.global::<Settings>().clone();
+        let disabled = &settings.editor.disabled_blocks;
+        let fg = cx.theme().foreground;
+        let muted_fg = cx.theme().muted_foreground;
+        let border = cx.theme().border;
+        let link_color = cx.theme().link;
+
+        let mut section = v_flex().gap_3();
+
+        for node in NODE_COMPONENTS {
+            let is_enabled = !disabled.contains(&node.id.to_string());
+            let node_id = node.id.to_string();
+
+            let switch = Switch::new(SharedString::from(format!("node-{}", node.id)))
+                .checked(is_enabled)
+                .small()
+                .on_click(cx.listener({
+                    let node_id = node_id.clone();
+                    move |_, checked, _, cx| {
+                        let node_id = node_id.clone();
+                        cx.update_global::<Settings, _>(|settings, _| {
+                            if *checked {
+                                settings.editor.disabled_blocks.retain(|b| b != &node_id);
+                            } else {
+                                settings.editor.disabled_blocks.push(node_id);
+                            }
+                            settings.save();
+                        });
+                        cx.notify();
+                    }
+                }));
+
+            let has_font_config = node.id != "divider";
+
+            let mut card =
+                v_flex()
+                    .w_full()
+                    .px_2()
+                    .py_3()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(border)
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .size_8()
+                                            .rounded_md()
+                                            .bg(border)
+                                            .child(
+                                                gpui_component::Icon::default()
+                                                    .path(node.icon_path)
+                                                    .size_4()
+                                                    .text_color(fg),
+                                            ),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .gap_0p5()
+                                            .child(
+                                                Label::new(node.label.to_string())
+                                                    .text_sm()
+                                                    .font_semibold()
+                                                    .text_color(fg),
+                                            )
+                                            .child(
+                                                Label::new(node.description.to_string())
+                                                    .text_xs()
+                                                    .text_color(muted_fg),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .when(has_font_config, |el| {
+                                        el.child(
+                                            Button::new(SharedString::from(format!(
+                                                "configure-{}",
+                                                node.id
+                                            )))
+                                            .xsmall()
+                                            .ghost()
+                                            .label("Configure")
+                                            .icon(
+                                                Icon::new(IconName::ArrowRight)
+                                                    .xsmall()
+                                                    .text_color(link_color),
+                                            )
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.active_section = SettingsSection::Editor;
+                                                cx.notify();
+                                            })),
+                                        )
+                                    })
+                                    .when(node.id != "heading", |el| el.child(switch)),
+                            ),
+                    );
+
+            // Heading: add sub-level toggles
+            if node.id == "heading" {
+                let mut levels_list = v_flex().gap_0();
+
+                for level in HEADING_LEVELS.iter() {
+                    let level_enabled = !disabled.contains(&level.id.to_string());
+                    let level_id = level.id.to_string();
+
+                    let level_row = h_flex()
+                        .w_full()
+                        .justify_between()
+                        .items_center()
+                        .py_2()
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                    gpui_component::Icon::default()
+                                        .path(level.icon_path)
+                                        .size_3()
+                                        .text_color(muted_fg),
+                                )
+                                .child(
+                                    Label::new(level.label.to_string()).text_xs().text_color(fg),
+                                ),
+                        )
+                        .child(
+                            Switch::new(SharedString::from(format!("level-{}", level.id)))
+                                .checked(level_enabled)
+                                .small()
+                                .on_click(cx.listener({
+                                    let level_id = level_id.clone();
+                                    move |_, checked, _, cx| {
+                                        let level_id = level_id.clone();
+                                        cx.update_global::<Settings, _>(|settings, _| {
+                                            if *checked {
+                                                settings
+                                                    .editor
+                                                    .disabled_blocks
+                                                    .retain(|b| b != &level_id);
+                                            } else {
+                                                settings.editor.disabled_blocks.push(level_id);
+                                            }
+                                            settings.save();
+                                        });
+                                        cx.notify();
+                                    }
+                                })),
+                        );
+
+                    levels_list = levels_list.child(level_row);
+                }
+
+                card = card.child(
+                    v_flex()
+                        .w_full()
+                        .px_2()
+                        .child(
+                            Label::new("Levels")
+                                .text_xs()
+                                .font_semibold()
+                                .text_color(muted_fg),
+                        )
+                        .child(levels_list),
+                );
             }
-        }))
+
+            section = section.child(card);
+        }
+
+        section
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = div().flex_1().px_6().pt_2().pb_6();
+        let content = div()
+            .flex_1()
+            .min_h_0()
+            .pt_2()
+            .pb_6()
+            .overflow_y_scrollbar();
 
         match self.active_section {
             SettingsSection::Appearance => content.child(self.render_appearance_section(cx)),
             SettingsSection::Editor => content.child(self.render_editor_section(cx)),
+            SettingsSection::Blocks => content.child(self.render_blocks_section(cx)),
         }
     }
 }
@@ -816,7 +1338,7 @@ impl Render for SettingsWindow {
                     .h_full()
                     .min_w_0()
                     .pt_8()
-                    .px_6()
+                    .px_3()
                     .child(self.render_header(cx))
                     .child(self.render_content(cx)),
             )

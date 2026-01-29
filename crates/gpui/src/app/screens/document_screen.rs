@@ -378,10 +378,13 @@ struct DocumentStateLoaded {
 
 impl RenderOnce for DocumentStateLoaded {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let editor_font_size = cx
-            .try_global::<Settings>()
+        let settings = cx.try_global::<Settings>();
+        let editor_font_size = settings
             .map(|s| s.editor.font_size * s.editor.zoom)
             .unwrap_or(16.0);
+        let h1_font_size = settings
+            .map(|s| s.editor.block_font_sizes.heading_1)
+            .unwrap_or(30.0);
 
         div()
             .bg(cx.theme().background.lighten(0.2))
@@ -407,7 +410,7 @@ impl RenderOnce for DocumentStateLoaded {
                             .child(
                                 Input::new(&self.content.title_input)
                                     .appearance(false)
-                                    .text_3xl()
+                                    .text_size(px(h1_font_size))
                                     .ml_10()
                                     .large(),
                             )

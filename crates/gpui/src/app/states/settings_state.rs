@@ -65,6 +65,20 @@ pub struct EditorSettings {
     pub zoom: f32,
     #[serde(default)]
     pub disabled_blocks: Vec<String>,
+    #[serde(default)]
+    pub block_font_sizes: BlockFontSizes,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BlockFontSizes {
+    #[serde(default = "default_h1_font_size")]
+    pub heading_1: f32,
+    #[serde(default = "default_h2_font_size")]
+    pub heading_2: f32,
+    #[serde(default = "default_h3_font_size")]
+    pub heading_3: f32,
+    #[serde(default = "default_text_font_size")]
+    pub text: f32,
 }
 
 fn default_light_theme() -> String {
@@ -85,6 +99,22 @@ fn default_editor_font_size() -> f32 {
 
 fn default_zoom() -> f32 {
     1.0
+}
+
+fn default_h1_font_size() -> f32 {
+    30.0
+}
+
+fn default_h2_font_size() -> f32 {
+    24.0
+}
+
+fn default_h3_font_size() -> f32 {
+    20.0
+}
+
+fn default_text_font_size() -> f32 {
+    16.0
 }
 
 impl Default for ThemeSettings {
@@ -111,6 +141,18 @@ impl Default for EditorSettings {
             font_size: default_editor_font_size(),
             zoom: default_zoom(),
             disabled_blocks: Vec::new(),
+            block_font_sizes: BlockFontSizes::default(),
+        }
+    }
+}
+
+impl Default for BlockFontSizes {
+    fn default() -> Self {
+        Self {
+            heading_1: default_h1_font_size(),
+            heading_2: default_h2_font_size(),
+            heading_3: default_h3_font_size(),
+            text: default_text_font_size(),
         }
     }
 }
