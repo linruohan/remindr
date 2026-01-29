@@ -917,7 +917,7 @@ fn render_tree_items(
                                     }),
                             )
                             .item(
-                                PopupMenuItem::new("New sub-folder")
+                                PopupMenuItem::new("New folder")
                                     .icon(Icon::new(IconName::Folder))
                                     .on_click({
                                         let this = this.clone();
@@ -939,6 +939,7 @@ fn render_tree_items(
                             .separator()
                             .item(
                                 PopupMenuItem::new("Rename")
+                                    .icon(Icon::default().path("icons/pencil-line.svg"))
                                     .on_click({
                                         let this = this.clone();
                                         let name = folder_name.clone();
@@ -947,11 +948,11 @@ fn render_tree_items(
                                                 state.start_rename(EditingItem::Folder(folder_id), &name, window, cx);
                                             });
                                         }
-                                    }),
+                                    })
                             )
                             .separator()
                             .item(
-                                PopupMenuItem::new("Delete with contents")
+                                PopupMenuItem::new("Bulk delete")
                                     .icon(Icon::default().path("icons/trash-2.svg"))
                                     .on_click({
                                         let this = this.clone();
@@ -985,7 +986,7 @@ fn render_tree_items(
                                     }),
                             )
                             .item(
-                                PopupMenuItem::new("Delete, keep children")
+                                PopupMenuItem::new("Delete")
                                     .icon(Icon::default().path("icons/trash-2.svg"))
                                     .on_click({
                                         let this = this.clone();
@@ -1300,6 +1301,7 @@ fn render_tree_items(
                         move |menu, _window, _cx| {
                             menu.item(
                                 PopupMenuItem::new("Rename")
+                                  .icon(Icon::default().path("icons/pencil-line.svg"))
                                     .on_click({
                                         let this = this.clone();
                                         let name = doc_title.clone();

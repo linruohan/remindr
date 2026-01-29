@@ -235,15 +235,6 @@ impl DocumentState {
         }
     }
 
-    /// Reset all stuck loading states (useful when window is recreated)
-    pub fn reset_stuck_loading_states(&mut self) {
-        for doc in &mut self.documents {
-            if doc.loading_in_progress {
-                doc.loading_in_progress = false;
-            }
-        }
-    }
-
     pub fn remove_document(&mut self, uid: i32) {
         self.documents.retain(|element| element.uid != uid);
     }
