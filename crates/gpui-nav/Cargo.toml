@@ -1,0 +1,9 @@
+[package]
+name = "gpui-nav"
+description = "A lightweight screen navigation library for GPUI"
+version = "0.1.1"
+edition="2024"
+publish = false
+
+[dependencies]
+gpui.workspace=true

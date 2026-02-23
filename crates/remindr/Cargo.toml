@@ -1,0 +1,30 @@
+[package]
+name = "remindr"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[package.metadata.bundle]
+name = "Remindr"
+identifier = "com.leadcode.remindr"
+icon = ["assets/icons/remindr1024x1024@2x.png"]
+category = "public.app-category.productivity"
+short_description = "A self-hostable alternative to Notion"
+copyright = "Copyright (c) Baptiste Parmantier 2025. All rights reserved."
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+gpui.workspace = true
+gpui-component-assets.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
+gpui-nav.workspace = true
+gpui-router.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smol.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true

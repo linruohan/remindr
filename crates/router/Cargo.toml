@@ -1,0 +1,33 @@
+[package]
+name = "gpui-router"
+version = "0.3.0"
+description = "A router for GPUI App."
+keywords = ["gpui", "router", "ui", "framework"]
+categories = ["gui"]
+edition.workspace = true
+publish = false
+documentation = "https://docs.rs/gpui-router"
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+gpui.workspace = true
+gpui-router-macros.workspace = true
+hashbrown.workspace = true
+matchit = "0.8.6"
+smallvec.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
+[features]
+default = ["font-kit", "wayland", "x11"]
+test-support = ["gpui/test-support"]
+inspector = ["gpui/inspector"]
+leak-detection = ["gpui/leak-detection"]
+wayland = ["gpui/wayland"]
+x11 = ["gpui/x11"]
+font-kit = ["gpui/font-kit"]
+screen-capture = ["gpui/scap"]
